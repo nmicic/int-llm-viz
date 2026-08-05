@@ -1,0 +1,1567 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inference trace — int-llm Q16.48</title>
+<!--
+  int-llm-viz / trace.html — "Inference trace"
+  Copyright 2026 Nenad Mićić
+  SPDX-License-Identifier: Apache-2.0
+
+  Self-contained offline page. It embeds the committed model.mgw, the C
+  harness trace (data/trace.json), and an exact BigInt port of the
+  integer-only inference path (fp_math.h + microgpt_int.c). Every number
+  displayed is either a recorded C-oracle value shown exactly, or is
+  recomputed in exact BigInt arithmetic and asserted equal to the record.
+  Floating point is used only for display geometry (bar lengths, colors);
+  those code sites are marked "display-only".
+-->
+<style>
+__THEME_CSS__
+
+/* ---------------- page-specific ---------------- */
+.badgerow { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#sampleStrip { display: flex; flex-wrap: wrap; gap: 6px; }
+#sampleStrip button, #timeline button.stepchip { padding: 3px 8px; }
+#timeline { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+#timeline .navbtn { padding: 3px 10px; }
+.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.panels .card { margin: 0; }
+.span2 { grid-column: 1 / -1; }
+@media (max-width: 980px) { .panels { grid-template-columns: 1fr; } .span2 { grid-column: auto; } }
+canvas.grid { display: block; width: 100%; }
+canvas.grid:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.headgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 560px) { .headgrid { grid-template-columns: 1fr; } }
+.headhdr { font: 11px var(--mono); color: var(--ink); margin-bottom: 2px; }
+.hdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: -1px; margin-right: 4px; }
+.headsum { font: 10px/1.5 var(--mono); color: var(--dim); overflow-wrap: break-word; margin-top: 2px;
+  min-height: 45px;  /* tallest rendered state; steps must not move the figures below */ }
+.inspect { font: 11px/1.65 var(--mono); color: var(--ink); background: var(--panel2);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; margin-top: 8px;
+  min-height: 46px; overflow-wrap: break-word; }
+/* Reserved heights (max rendered state at full layout width) so per-step
+   text can never change the vertical layout — figures stay pinned. */
+#attnScale { min-height: 33px; }
+#insAttn { min-height: 141px; }
+#insMlp { min-height: 105px; }
+.inspect .k, .kvline .k { color: var(--dim); }
+.kvline { font: 11px/1.8 var(--mono); overflow-wrap: break-word; }
+.callout { font: 12px var(--mono); color: var(--gold); background: #201b0e;
+  border: 1px solid #4d431f; border-radius: 8px; padding: 6px 9px; margin: 8px 0; overflow-wrap: break-word; }
+.vline { font: 12px/1.8 var(--mono); overflow-wrap: break-word; }
+.vline .ok { color: #8ce99a; }
+.vline .bad { color: #ffa8a8; }
+.smallnote { font-size: 11px; color: var(--dim); max-width: none; }
+footer .mono { overflow-wrap: break-word; }
+.helpkeys td { padding: 2px 10px 2px 0; vertical-align: top; }
+.helpkeys { border-collapse: collapse; }
+</style>
+</head>
+<body>
+<main>
+<!--UNBUILT-NOTICE--><div style="background:#3a1420;border:1px solid #7a2b3b;color:#ffd6d6;font:14px/1.6 ui-monospace,Menlo,Consolas,monospace;padding:12px 16px;border-radius:10px;margin:12px 0;max-width:72ch">
+You are looking at the <b>unbuilt source template</b> (web/trace.html).
+Its data placeholders are not filled in, so no checkpoint, styling, or
+visualization can appear here. Open the built page
+<a href="../site/trace.html" style="color:#ffd166">site/trace.html</a>
+instead &mdash; it is committed; <b>make</b> regenerates it.
+</div><!--/UNBUILT-NOTICE-->
+  <nav class="topnav" aria-label="site">
+    <a href="index.html">index</a>
+    <a href="atlas.html">atlas</a>
+    <a class="here" href="trace.html" aria-current="page">trace</a>
+    <a href="space.html">space</a>
+    <a href="weights.html">weights</a>
+    <span class="badgerow">
+      <span class="badge" id="selfBadge">self-check: running…</span>
+      <span class="badge" id="oracleBadge">C oracle…</span>
+      <button id="helpBtn" aria-label="toggle help overlay" title="help (?)">?</button>
+    </span>
+  </nav>
+
+  <h1>Inference trace <span class="plain">— 20 exact generations, every integer visible</span></h1>
+  <p class="sub">Q16.48 fixed-point GPT (32d / 4 heads / 1 layer), replayed step by step from the C harness record and
+    re-derived in exact BigInt arithmetic in this page. Press <kbd>?</kbd> for keys and encodings.</p>
+
+  <section class="card" id="sampleCard">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">Samples</h2>
+      <span class="smallnote">⌀ = BOS (token 26): the start marker; a step that chooses ⌀ ends the sample (that step is recorded but ⌀ never enters the text).</span>
+    </div>
+    <div id="sampleStrip" role="listbox" aria-label="generated samples"></div>
+    <div id="timeline" aria-label="steps of the selected sample"></div>
+  </section>
+
+  <div class="panels">
+    <section class="card span2" id="residualCard">
+      <h2>Residual stream <span class="smallnote">— six 32-cell vectors, exactly as computed</span></h2>
+      <canvas id="cnvRes" class="grid" tabindex="0" aria-label="residual stream vectors; arrow keys move the cell cursor"></canvas>
+      <div class="legend" id="resLegend"></div>
+      <div class="inspect" id="insRes">hover a cell, or focus the grid and use arrow keys.</div>
+    </section>
+
+    <section class="card" id="attnCard">
+      <h2>Attention <span class="smallnote">— per head: weight bars over key positions; thin strip = pre-softmax scores</span></h2>
+      <div class="smallnote" id="attnScale"></div>
+      <div class="headgrid" id="headGrid"></div>
+      <div class="legend" id="attnLegend"></div>
+      <div class="inspect" id="insAttn">hover a bar, or focus a head and use ← →.</div>
+    </section>
+
+    <section class="card" id="mlpCard">
+      <h2>MLP hidden units <span class="smallnote">— h_pre = fc1 · xn_mlp, 128 units (16×8, row-major)</span></h2>
+      <div class="row">
+        <button id="btnPre" aria-pressed="true">pre-ReLU</button>
+        <button id="btnPost" aria-pressed="false">post-ReLU</button>
+        <span class="smallnote" id="mlpFire"></span>
+      </div>
+      <canvas id="cnvMlp" class="grid" tabindex="0" aria-label="MLP hidden units; arrow keys move the cell cursor"></canvas>
+      <div class="legend" id="mlpLegend"></div>
+      <div class="inspect" id="insMlp">hover a unit, or focus the grid and use arrow keys. <kbd>R</kbd> toggles pre/post ReLU.</div>
+    </section>
+
+    <section class="card span2" id="outCard">
+      <h2>Output &amp; sampling <span class="smallnote">— 27 logits, exact ×2 temperature scale, integer softmax, one RNG draw</span></h2>
+      <canvas id="cnvOut" class="grid" tabindex="0" aria-label="logits, scaled logits and probabilities per token; up and down arrows move the row cursor"></canvas>
+      <div class="inspect" id="insOut">hover a row, or focus the grid and use ↑ ↓.</div>
+      <div class="callout" id="totLine"></div>
+      <canvas id="cnvRoul" class="grid" tabindex="0" aria-label="roulette strip of cumulative probabilities with the sampled threshold r; left and right arrows move the segment cursor"></canvas>
+      <div id="roulText"></div>
+    </section>
+
+    <section class="card span2" id="verCard">
+      <h2>Verification</h2>
+      <div class="vline" id="verStep"></div>
+      <div class="vline" id="verSample"></div>
+      <div class="vline" id="verGlobal"></div>
+      <div class="vline" id="verFnv"></div>
+      <p class="smallnote">Every panel shows the <b>recorded</b> values written by the C harness (tools/trace_harness.c, which runs the
+      unmodified upstream runtime as its oracle). This page independently <b>recomputes</b> the full integer forward pass and the
+      sampling chain in BigInt — same shifts, same truncations, same iteration counts as fp_math.h / microgpt_int.c — and asserts
+      equality field by field. So every number on screen is simultaneously a recorded value and a recomputed one.</p>
+    </section>
+  </div>
+
+  <footer>
+    <div id="footTrace" class="mono"></div>
+    <div class="mono" id="footSha"></div>
+    <div>Apache-2.0 · Copyright 2026 Nenad Mićić · offline, self-contained; no network use.</div>
+  </footer>
+</main>
+
+<div class="tip" id="tip" role="tooltip"></div>
+
+<div class="help-overlay" id="help" role="dialog" aria-modal="true" aria-label="help">
+  <div class="help-box" id="helpBox" tabindex="-1">
+    <h2>Help — encodings &amp; keys</h2>
+    <h3>Number format: Q16.48</h3>
+    <p class="smallnote">Every model scalar is an <span class="mono">int64</span> "raw" value; its meaning is
+      raw / 2<sup>48</sup>. FP_ONE = 2<sup>48</sup> = 281474976710656 represents 1.0. Inspectors show three exact forms:
+      the raw integer, its 16-digit two's-complement hex image (the bytes on disk), and the exact decimal
+      (2<sup>-48</sup> has a terminating decimal expansion, so at most 48 fraction digits — nothing is rounded).
+      Labels shortened for space always end with "…" and are prefixes of the exact decimal; inspectors show every digit.</p>
+    <h3>Recorded vs recomputed</h3>
+    <p class="smallnote">All displayed numbers are the C harness record. On load, this page parses the embedded model.mgw,
+      re-verifies all 9 tensor FNV-1a64 checksums, re-verifies the whole xorshift64 chain (every step's rng_before, r, and the
+      final state), and recomputes sample 1 completely in BigInt. Selecting any step recomputes that whole sample from scratch
+      (KV cache rebuilt by recomputation, not from the record) and compares every field; the Verification panel reports the
+      exact count of equal fields. Bar lengths and colors are float display geometry only — never the numbers.</p>
+    <h3>Color encodings</h3>
+    <p class="smallnote">Signed values use one diverging ramp: negative #4dabf7 ↔ dark neutral ↔ positive #ffa94d, symmetric
+      about zero; each strip labels its endpoints with the actual max |value| in view. Probabilities and attention weights in
+      [0,1] use a sequential ramp from the panel surface to gold #ffd166 (bars also encode value by height/length).
+      Heads keep fixed colors — h0 #fa5252, h1 #fab005, h2 #38d9a9, h3 #4dabf7 — used only in head labels, never for data
+      values, and always accompanied by text. Numbers are always drawn in ink, never in ramp colors; color is never the only
+      encoding.</p>
+    <h3>Panels</h3>
+    <p class="smallnote"><b>Residual stream</b> — the exact stage order of inference_forward():
+      emb = wte[token] + wpe[pos] (raw int64 add) → RMSNorm gives x0 (scale_init) → RMSNorm gives xn_attn (scale_attn) which
+      feeds Wq/Wk/Wv → x_mid = x0 + Wo(ao) (residual add) → RMSNorm gives xn_mlp (scale_mlp) which feeds fc1 →
+      x_out = x_mid + fc2(ReLU(h_pre)) (residual add). RMSNorm here is: ms = Σ fp_mul(x[i],x[i]) / 32 (integer divide),
+      scale = fp_inv_sqrt(ms + FP_ONE/100000), out[i] = fp_mul(x[i], scale). The left lane arrow is the data flow; right lane
+      brackets mark the two residual adds. There is no norm after x_out: lm_head reads x_out directly.</p>
+    <p class="smallnote"><b>Attention</b> — head h owns dims 8h..8h+7 of q/k/v. score(s) = fp_mul(Σ_j fp_mul(q_j, k_j(s)), attn_scale)
+      with attn_scale = fp_inv_sqrt(8) = 0.353553… (raw 99516432383215). Softmax per head: subtract the max score, fp_safe_exp
+      (clamped to ±10), sum, then weight(s) = fp_mul(e(s), fp_div(FP_ONE, sum)). Bars: height and gold ramp = weight; the thin
+      strip below is the signed pre-softmax score (diverging ramp); the letter under each bar is the input character at that key
+      position (⌀ = BOS). Σ weights is the exact BigInt sum of the recorded weights — integer truncation usually leaves it a few
+      ulp below FP_ONE, and it is displayed exactly as the integers give it.</p>
+    <p class="smallnote"><b>MLP</b> — h_pre[i] = Σ_c fp_mul(fc1[i·32+c], xn_mlp[c]) (fc1 row i), shown pre-ReLU (diverging) or
+      post-ReLU (post = max(0, h_pre); units with h_pre ≤ 0 are extinguished — outline only). "N/128 fire" counts h_pre &gt; 0,
+      the exact C predicate.</p>
+    <p class="smallnote"><b>Output &amp; sampling</b> — logits = lm_head · x_out. Temperature 0.5: the C code multiplies each
+      logit by inv_temperature = fp_div(FP_ONE, FP_ONE/2) = 2.0 exactly, so logits_scaled is an exact doubling (asserted per
+      element every step). Softmax over the scaled logits gives probs; prob_total is their exact integer sum — truncation
+      leaves it a few ulp below FP_ONE, and the callout shows the exact gap. Sampling draws ONE xorshift64 value
+      (s^=s≪13; s^=s≫7; s^=s≪17), takes the top 48 bits as uniform ∈ [0,1), and computes r = fp_mul(uniform, prob_total).
+      The chosen token is the first whose cumulative probability exceeds r — verbatim C: <span class="mono">cum += w[i]; if (r &lt; cum) return i;</span>
+      (fallback n−1 if the loop completes). The roulette strip shows the 27 cumulative segments with the marker at r
+      (marker position is display geometry; the label carries the exact r).</p>
+    <h3>Keyboard</h3>
+    <table class="helpkeys">
+      <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>previous / next sample</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>previous / next step (when no grid is focused)</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>autoplay (1 step/s; runs on into the next sample, wrapping at the end)</td></tr>
+      <tr><td><kbd>R</kbd></td><td>toggle MLP pre-ReLU / post-ReLU</td></tr>
+      <tr><td><kbd>Tab</kbd></td><td>move focus between controls and grids</td></tr>
+      <tr><td>arrows in a grid</td><td>move that grid's cell cursor (residual and MLP: 2-D; attention: ← →; output: ↑ ↓; roulette: ← →)</td></tr>
+      <tr><td><kbd>?</kbd></td><td>toggle this help</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>close help</td></tr>
+    </table>
+    <p><button id="helpClose">close (Esc)</button></p>
+  </div>
+</div>
+
+<script>
+__MGW_JS__
+</script>
+<script>
+"use strict";
+/* ================= embedded data (substituted at build time) ========== */
+const MGW_B64 = "__MGW_B64__";
+const TRACE = __TRACE_JSON__;
+const SUMMARY = __SUMMARY_JSON__;
+
+/* ================= exact Q16.48 primitives =============================
+ * BigInt ports of fp_math.h, bit-for-bit: same shift semantics (BigInt >>
+ * is an arithmetic shift, exactly C's fp_w_asr), same truncating division
+ * (BigInt / truncates toward zero, exactly fp_w_divs), same iteration
+ * counts, same constants. BigInt.asIntN(64, ·) reproduces C's int64 casts
+ * so even hypothetical overflow would wrap identically. */
+const FP1 = 281474976710656n;          /* FP_ONE = 2^48 */
+const FP_TEN = 10n << 48n;             /* fp_from_int(10), fp_safe_exp clamp */
+const FP_THREE = 3n << 48n;            /* fp_from_int(3), inv_sqrt Newton */
+const I64MAX = 9223372036854775807n;
+const U64MASK = (1n << 64n) - 1n;
+const NE = 32, HD = 8, NH = 4, MD = 128, VOC = 27, BOSID = 26, BLOCK = 8;
+
+/* fp_mul: (int128)a*b >> 48 (arithmetic), cast to int64. */
+function fpMul(a, b) { return BigInt.asIntN(64, (a * b) >> 48n); }
+/* fp_div: (|a| << 48 with a's sign) / b truncating toward zero, cast. */
+function fpDiv(a, b) { return BigInt.asIntN(64, (a << 48n) / b); }
+
+function bitLen(v) { return v.toString(2).length; } /* v > 0n only */
+
+/* fp_inv_sqrt: range-reduce to [1,4), Newton y*(3−x·y²)/2 with 8 rounds,
+ * scale back, saturate. Every cast site mirrors the C exactly. */
+function fpInvSqrt(x) {
+  if (x <= 0n) return 0n;
+  const msb = bitLen(x) - 1;                    /* 63 - clzll(x) */
+  const k = (msb - 48) >> 1;                    /* arithmetic shift, may be < 0 */
+  const xn = k >= 0 ? (x >> BigInt(2 * k)) : (x << BigInt(-2 * k));
+  const msbN = bitLen(xn) - 1;
+  let y = msbN === 48 ? (1n << 48n) : (1n << 47n);
+  for (let i = 0; i < 8; i++) {
+    const y2 = BigInt.asIntN(64, (y * y) >> 48n);
+    const xy2 = BigInt.asIntN(64, (xn * y2) >> 48n);
+    const factor = FP_THREE - xy2;
+    y = BigInt.asIntN(64, (y * factor) >> 49n); /* asr by FP_PRECISION+1 */
+    if (y <= 0n) { y = 1n; break; }
+  }
+  if (k >= 0) { const r = y >> BigInt(k); return r < 0n ? 0n : r; }
+  const r = y << BigInt(-k);
+  if (r > I64MAX) return I64MAX;
+  if (r < 0n) return 0n;
+  return r;
+}
+
+/* fp_exp_dyadic: (1 + x/2^k)^(2^k) by k squarings; fp_exp uses k = 14. */
+function fpExpDyadic(x, kk) {
+  let result = FP1 + (x >> BigInt(kk));
+  for (let i = 0; i < kk; i++) result = fpMul(result, result);
+  return result;
+}
+function fpExp(x) {
+  if (x >= 0n) return fpExpDyadic(x, 14);
+  const pos = fpExpDyadic(-x, 14);
+  if (pos === 0n) return 0n;
+  return fpDiv(FP1, pos);
+}
+function fpSafeExp(x) {
+  if (x > FP_TEN) x = FP_TEN;
+  if (x < -FP_TEN) return 0n;
+  return fpExp(x);
+}
+
+/* xorshift64 (fp_math.h): s^=s<<13; s^=s>>7; s^=s<<17 on uint64. */
+function rngNext(s) {
+  s = (s ^ (s << 13n)) & U64MASK;
+  s = s ^ (s >> 7n);
+  s = (s ^ (s << 17n)) & U64MASK;
+  return s;
+}
+/* fp_rng_uniform: top 48 bits of the NEW state. */
+
+/* ================= model-level blocks (microgpt_int.c) ================ */
+function rmsnormFwd(x, out) {
+  const n = x.length;
+  let ms = 0n;
+  for (let i = 0; i < n; i++) ms += fpMul(x[i], x[i]);
+  ms = ms / BigInt(n);                 /* C integer divide (ms >= 0) */
+  const msEps = ms + FP1 / 100000n;    /* eps = FP_ONE/100000 = 2814749767 */
+  const scale = fpInvSqrt(msEps);
+  for (let i = 0; i < n; i++) out[i] = fpMul(x[i], scale);
+  return scale;
+}
+function linearFwd(x, w, nout, nin, out) {
+  for (let r = 0; r < nout; r++) {
+    let s = 0n;
+    const base = r * nin;
+    for (let c = 0; c < nin; c++) s += fpMul(w[base + c], x[c]);
+    out[r] = BigInt.asIntN(64, s);
+  }
+}
+function softmaxFwd(logits, probs) {
+  const n = logits.length;
+  let mx = logits[0];
+  for (let i = 1; i < n; i++) if (logits[i] > mx) mx = logits[i];
+  let sum = 0n;
+  for (let i = 0; i < n; i++) { probs[i] = fpSafeExp(logits[i] - mx); sum += probs[i]; }
+  if (sum === 0n) sum = 1n;
+  const inv = fpDiv(FP1, sum);
+  for (let i = 0; i < n; i++) probs[i] = fpMul(probs[i], inv);
+}
+
+/* Parse the embedded checkpoint once; plain BigInt arrays for hot loops. */
+function buildModel() {
+  const parsed = parseMGW(b64ToBytes(MGW_B64));
+  const grab = (name) => Array.from(parsed.byName.get(name).raw);
+  return {
+    parsed,
+    uchars: parsed.uchars,
+    wte: grab("wte"), wpe: grab("wpe"), lmh: grab("lm_head"),
+    wq: grab("layers.0.attn_wq"), wk: grab("layers.0.attn_wk"),
+    wv: grab("layers.0.attn_wv"), wo: grab("layers.0.attn_wo"),
+    fc1: grab("layers.0.mlp_fc1"), fc2: grab("layers.0.mlp_fc2"),
+    attnScale: fpInvSqrt(8n << 48n),          /* ATTN_SCALE = fp_inv_sqrt(fp_from_int(HEAD_DIM)) */
+    invT: fpDiv(FP1, FP1 / 2n),               /* fp_div(FP_ONE, temperature=FP_ONE/2) = exactly 2.0 */
+  };
+}
+
+/* One inference_forward() step, recording every intermediate exactly as
+ * tools/trace_harness.c instr_forward() does. kvK/kvV are this sample's
+ * recomputed KV rows (never taken from the record: chained from scratch). */
+function forwardStep(model, kvK, kvV, tokenId, pos) {
+  const rec = {};
+  const x = new Array(NE);
+  for (let i = 0; i < NE; i++)
+    x[i] = BigInt.asIntN(64, model.wte[tokenId * NE + i] + model.wpe[pos * NE + i]);
+  rec.emb = x.slice();
+  rec.scale_init = rmsnormFwd(x, x);
+  rec.x0 = x.slice();
+  const xr = x.slice();
+  const xn = new Array(NE);
+  rec.scale_attn = rmsnormFwd(x, xn);
+  rec.xn_attn = xn.slice();
+  const q = new Array(NE), k = new Array(NE), v = new Array(NE);
+  linearFwd(xn, model.wq, NE, NE, q);
+  linearFwd(xn, model.wk, NE, NE, k);
+  linearFwd(xn, model.wv, NE, NE, v);
+  rec.q = q; rec.k = k; rec.v = v;
+  kvK[pos] = k.slice(); kvV[pos] = v.slice();
+  const seqLen = pos + 1;
+  const ao = new Array(NE);
+  rec.attn = [];
+  const al = new Array(seqLen);
+  for (let h = 0; h < NH; h++) {
+    const hs = h * HD;
+    for (let s = 0; s < seqLen; s++) {
+      let dot = 0n;
+      const krow = kvK[s];
+      for (let j = 0; j < HD; j++) dot += fpMul(q[hs + j], krow[hs + j]);
+      al[s] = fpMul(BigInt.asIntN(64, dot), model.attnScale);
+    }
+    const scores = al.slice();
+    let mx = al[0];
+    for (let s = 1; s < seqLen; s++) if (al[s] > mx) mx = al[s];
+    let sm = 0n;
+    for (let s = 0; s < seqLen; s++) { al[s] = fpSafeExp(al[s] - mx); sm += al[s]; }
+    if (sm === 0n) sm = 1n;
+    const invSm = fpDiv(FP1, sm);
+    for (let s = 0; s < seqLen; s++) al[s] = fpMul(al[s], invSm);
+    for (let j = 0; j < HD; j++) {
+      let acc = 0n;
+      for (let s = 0; s < seqLen; s++) acc += fpMul(al[s], kvV[s][hs + j]);
+      ao[hs + j] = BigInt.asIntN(64, acc);
+    }
+    rec.attn.push({ scores, weights: al.slice() });
+  }
+  rec.ao = ao;                           /* concatenated head outputs, BEFORE Wo */
+  const tmp = new Array(NE);
+  linearFwd(ao, model.wo, NE, NE, tmp);
+  for (let i = 0; i < NE; i++) x[i] = BigInt.asIntN(64, tmp[i] + xr[i]);
+  rec.x_mid = x.slice();
+  const xr2 = x.slice();
+  const xnM = new Array(NE);
+  rec.scale_mlp = rmsnormFwd(x, xnM);
+  rec.xn_mlp = xnM.slice();
+  const h1 = new Array(MD);
+  linearFwd(xnM, model.fc1, MD, NE, h1);
+  rec.h_pre = h1.slice();
+  for (let i = 0; i < MD; i++) h1[i] = h1[i] > 0n ? h1[i] : 0n;   /* ReLU */
+  const fc2o = new Array(NE);
+  linearFwd(h1, model.fc2, NE, MD, fc2o);
+  for (let i = 0; i < NE; i++) x[i] = BigInt.asIntN(64, fc2o[i] + xr2[i]);
+  rec.x_out = x.slice();
+  const logits = new Array(VOC);
+  linearFwd(x, model.lmh, VOC, NE, logits);
+  rec.logits = logits;
+  return rec;
+}
+
+/* Full recomputation of one sample: mgpt_generate_sample() ported.
+ * KV cache is rebuilt purely by recomputation; the RNG threads through
+ * weighted_choice exactly (one draw per step, only when total != 0). */
+function recomputeSample(model, rngStart) {
+  const kvK = [], kvV = [];
+  let tokenId = BOSID, text = "", rng = rngStart;
+  const steps = [];
+  for (let pos = 0; pos < BLOCK; pos++) {
+    const rec = forwardStep(model, kvK, kvV, tokenId, pos);
+    const scaled = new Array(VOC);
+    for (let i = 0; i < VOC; i++) scaled[i] = fpMul(rec.logits[i], model.invT);
+    const rngBefore = rng;
+    const probs = new Array(VOC);
+    softmaxFwd(scaled, probs);
+    let total = 0n;
+    for (let i = 0; i < VOC; i++) total += probs[i];
+    let r = 0n, uniform = 0n, chosen = 0;
+    if (total !== 0n) {                 /* weighted_choice: no draw when total==0 */
+      rng = rngNext(rng);
+      uniform = rng >> 16n;             /* top 48 bits */
+      r = fpMul(uniform, total);
+      chosen = VOC - 1;                 /* C fallback: return n-1 */
+      let cum = 0n;
+      for (let i = 0; i < VOC; i++) { cum += probs[i]; if (r < cum) { chosen = i; break; } }
+    }
+    steps.push({ pos, tokenIn: tokenId, rec, scaled, probs, total,
+                 rngBefore, rngAfter: rng, uniform, r, chosen });
+    tokenId = chosen;
+    if (tokenId === BOSID) break;
+    if (tokenId < VOC - 1) text += model.uchars[tokenId];
+  }
+  return { steps, text, rngEnd: rng };
+}
+
+/* Compare one recomputed step against the recorded step. Every element is
+ * one field; returns the exact field count and any mismatches. */
+function compareStep(st, mine) {
+  const mm = [];
+  let fields = 0;
+  const eq = (name, got, want) => {
+    fields++;
+    if (got !== want) mm.push(name + ": recomputed " + got + " != recorded " + want);
+  };
+  const eqv = (name, got, wantStrs) => {
+    if (!got || got.length !== wantStrs.length) {
+      fields++; mm.push(name + ".length: recomputed " + (got ? got.length : "none") +
+                        " != recorded " + wantStrs.length);
+      return;
+    }
+    for (let i = 0; i < got.length; i++) {
+      fields++;
+      if (got[i] !== BigInt(wantStrs[i]))
+        mm.push(name + "[" + i + "]: recomputed " + got[i] + " != recorded " + wantStrs[i]);
+    }
+  };
+  eq("pos", mine.pos, st.pos);
+  eq("token_in", mine.tokenIn, st.token_in);
+  eqv("emb", mine.rec.emb, st.emb);
+  eqv("x0", mine.rec.x0, st.x0);
+  eq("scale_init", mine.rec.scale_init, BigInt(st.scale_init));
+  eqv("xn_attn", mine.rec.xn_attn, st.xn_attn);
+  eq("scale_attn", mine.rec.scale_attn, BigInt(st.scale_attn));
+  eqv("q", mine.rec.q, st.q);
+  eqv("k", mine.rec.k, st.k);
+  eqv("v", mine.rec.v, st.v);
+  for (let h = 0; h < NH; h++) {
+    eqv("attn.h" + h + ".scores", mine.rec.attn[h].scores, st.attn[h].scores);
+    eqv("attn.h" + h + ".weights", mine.rec.attn[h].weights, st.attn[h].weights);
+  }
+  eqv("ao", mine.rec.ao, st.ao);
+  eqv("x_mid", mine.rec.x_mid, st.x_mid);
+  eqv("xn_mlp", mine.rec.xn_mlp, st.xn_mlp);
+  eq("scale_mlp", mine.rec.scale_mlp, BigInt(st.scale_mlp));
+  eqv("h_pre", mine.rec.h_pre, st.h_pre);
+  eqv("x_out", mine.rec.x_out, st.x_out);
+  eqv("logits", mine.rec.logits, st.logits);
+  eqv("logits_scaled", mine.scaled, st.logits_scaled);
+  for (let i = 0; i < VOC; i++)                 /* temperature 0.5 = exact doubling */
+    eq("logits_scaled==2*logits[" + i + "]", mine.scaled[i], 2n * mine.rec.logits[i]);
+  eqv("probs", mine.probs, st.probs);
+  eq("prob_total", mine.total, BigInt(st.prob_total));
+  eq("rng_before", mine.rngBefore, BigInt(st.rng_before));
+  eq("r", mine.r, BigInt(st.r));
+  eq("chosen", mine.chosen, st.chosen);
+  eq("checks.logits_equal", st.checks.logits_equal, true);
+  eq("checks.kv_equal", st.checks.kv_equal, true);
+  return { fields, mismatches: mm };
+}
+
+/* Meta / checksum / RNG-record assertions shared by node and browser.
+ * `ok(cond, msg)` counts one check per call. */
+function runMetaChecks(model, ok) {
+  const m = TRACE.meta;
+  ok(FP1 === BigInt(m.fp_one), "meta.fp_one == 2^48");
+  ok(FP1 === Q48.FP_ONE, "Q48.FP_ONE agrees");
+  ok(model.attnScale === BigInt(m.attn_scale), "attn_scale == recomputed fp_inv_sqrt(8)");
+  ok(FP1 / 2n === BigInt(m.temperature), "temperature == FP_ONE/2");
+  ok(model.invT === BigInt(m.inv_temperature), "inv_temperature == fp_div(FP_ONE, FP_ONE/2)");
+  ok(model.invT === 2n * FP1, "inv_temperature is exactly 2.0");
+  const c = m.config, pc = model.parsed.config;
+  ok(c.n_embd === 32 && pc.hidden_dim === 32, "n_embd 32");
+  ok(c.n_head === 4 && pc.num_heads === 4, "n_head 4");
+  ok(c.n_layer === 1 && pc.num_layers === 1, "n_layer 1");
+  ok(c.head_dim === 8 && pc.head_dim === 8, "head_dim 8");
+  ok(c.mlp_dim === 128 && pc.intermediate_dim === 128, "mlp_dim 128");
+  ok(c.block_size === 8 && pc.max_seq_len === 8, "block_size 8");
+  ok(c.vocab_size === 27 && pc.vocab_size === 27, "vocab_size 27");
+  ok(c.bos === 26 && model.parsed.bos === 26, "BOS id 26");
+  ok(m.uchars === model.uchars && m.uchars.length === 26, "uchars agree (26 letters)");
+  ok(model.parsed.rngState === BigInt(m.rng_state_initial), "rng.state tensor == rng_state_initial");
+  ok(model.parsed.numWeights === m.num_params && m.num_params === 14272, "num_params 14272");
+  ok(TRACE.samples.length === 20, "20 samples");
+  ok(TRACE.verification.pass === true, "verification.pass is true");
+  ok(SUMMARY.trace_pass === true, "summary.trace_pass");
+  ok(SUMMARY.trace_steps === TRACE.verification.steps_compared, "summary.trace_steps agrees");
+  ok(SUMMARY.model_bytes === model.parsed.fileSize, "summary.model_bytes == parsed size");
+  ok(SUMMARY.num_params === 14272, "summary.num_params");
+  for (let i = 0; i < 20; i++)
+    ok(SUMMARY.samples[i] === TRACE.verification.pristine_samples[i], "summary.samples[" + i + "]");
+}
+function runFnvChecks(model, ok) {
+  const names = ["wte", "wpe", "lm_head", "layers.0.attn_wq", "layers.0.attn_wk",
+                 "layers.0.attn_wv", "layers.0.attn_wo", "layers.0.mlp_fc1", "layers.0.mlp_fc2"];
+  let allOk = true;
+  for (const name of names) {
+    const got = fnv1a64(model.parsed.byName.get(name).raw);
+    const okS = got === BigInt(SUMMARY.tensor_fnv1a64[name]);
+    const okT = got === BigInt(TRACE.meta.tensor_fnv1a64[name]);
+    ok(okS, "fnv1a64(" + name + ") == summary");
+    ok(okT, "fnv1a64(" + name + ") == trace meta");
+    allOk = allOk && okS && okT;
+  }
+  return allOk;
+}
+/* Record-driven xorshift64 chain: uses recorded prob_total, so it verifies
+ * rng_before, r, and the final state independently of the forward pass. */
+function runRngChainChecks(ok) {
+  let s = BigInt(TRACE.meta.rng_state_initial);
+  for (const sample of TRACE.samples) {
+    for (const st of sample.steps) {
+      ok(s === BigInt(st.rng_before), "rng chain: rng_before s" + sample.index + " p" + st.pos);
+      const total = BigInt(st.prob_total);
+      if (total !== 0n) {
+        s = rngNext(s);
+        ok(fpMul(s >> 16n, total) === BigInt(st.r), "rng chain: r s" + sample.index + " p" + st.pos);
+      }
+    }
+  }
+  ok(s === BigInt(TRACE.verification.rng_final_pristine), "rng chain: final state == pristine");
+  ok(TRACE.verification.rng_final_match === true, "recorded rng_final_match");
+}
+
+/* ================= node self-test (runs under tools/page_check.js) ==== */
+function nodeSelfTest() {
+  let checks = 0;
+  const bad = [];
+  const ok = (cond, msg) => {
+    checks++;
+    if (!cond) { bad.push(msg); if (bad.length <= 25) console.error("FAIL: " + msg); }
+  };
+  const model = buildModel();
+  runMetaChecks(model, ok);
+  runFnvChecks(model, ok);
+  runRngChainChecks(ok);
+
+  /* Full chained recompute: all 20 samples, every step, every field.
+   * The RNG threads from rng_state_initial through MY recomputation. */
+  let rng = BigInt(TRACE.meta.rng_state_initial);
+  let totalSteps = 0;
+  for (let si = 0; si < TRACE.samples.length; si++) {
+    const sample = TRACE.samples[si];
+    const mine = recomputeSample(model, rng);
+    rng = mine.rngEnd;
+    ok(mine.steps.length === sample.steps.length,
+       "s" + si + ": recomputed step count " + mine.steps.length + " == recorded " + sample.steps.length);
+    const n = Math.min(mine.steps.length, sample.steps.length);
+    for (let pi = 0; pi < n; pi++) {
+      const res = compareStep(sample.steps[pi], mine.steps[pi]);
+      checks += res.fields;
+      for (const mm of res.mismatches) {
+        bad.push("s" + si + " p" + pi + " " + mm);
+        if (bad.length <= 25) console.error("FAIL: s" + si + " p" + pi + " " + mm);
+      }
+      totalSteps++;
+    }
+    ok(mine.text === sample.pristine_text,
+       "s" + si + ": reassembled text \"" + mine.text + "\" == pristine \"" + sample.pristine_text + "\"");
+    ok(mine.text === sample.text, "s" + si + ": text == recorded text");
+    ok(sample.match_pristine === true, "s" + si + ": match_pristine recorded true");
+    ok(mine.text === TRACE.verification.pristine_samples[si], "s" + si + ": text in verification list");
+  }
+  ok(totalSteps === TRACE.verification.steps_compared,
+     "recomputed " + totalSteps + " steps == steps_compared " + TRACE.verification.steps_compared);
+  ok(rng === BigInt(TRACE.verification.rng_final_pristine),
+     "final recomputed RNG state == rng_final_pristine");
+  ok(TRACE.verification.logit_mismatches === 0 && TRACE.verification.kv_mismatches === 0 &&
+     TRACE.verification.sample_mismatches === 0, "harness recorded zero mismatches");
+
+  if (bad.length > 0)
+    throw new Error("trace self-test FAILED: " + bad.length + " of " + checks +
+                    " assertions failed; first: " + bad[0]);
+  globalThis.__PAGE_CHECK__ = { page: "trace", pass: true, checks };
+  console.log("trace self-test: " + checks + " assertions, all equal");
+}
+
+/* ================= formatting helpers (exact) ========================= */
+const decStr = Q48.toDecimalString;
+function shortDec(v, max) {
+  const s = decStr(v);
+  const lim = max || 12;
+  return s.length <= lim ? s : s.slice(0, lim) + "…";
+}
+function u64hex(v) { return "0x" + v.toString(16).padStart(16, "0"); }
+function tokChar(t) { return t === BOSID ? "⌀" : TRACE.meta.uchars[t]; }
+function tokLabel(t) { return t === BOSID ? "⌀ (BOS, 26)" : "'" + TRACE.meta.uchars[t] + "' (" + t + ")"; }
+function q48Html(name, v) {
+  return '<span class="k">' + name + '</span> raw=' + v + ' · hex=' + Q48.toHex(v) +
+         ' · exact=' + decStr(v);
+}
+function ulpGapText(total) {
+  const gap = FP1 - total;
+  if (gap === 0n) return "= FP_ONE exactly";
+  if (gap > 0n) return "= FP_ONE - " + gap + " ulp — fixed-point truncation made visible";
+  return "= FP_ONE + " + (-gap) + " ulp";
+}
+
+/* ================= browser UI ========================================= */
+const IS_BROWSER = typeof document !== "undefined";
+
+function init() {
+  /* ---- exact data caches ---- */
+  const model = buildModel();
+  const sampleCache = new Map();   /* si -> recomputeSample result */
+  const cmpCache = new Map();      /* si*8+pi -> compareStep result */
+  const viewCache = new Map();     /* si*8+pi -> BigInt view of recorded step */
+
+  function sampleRecomputed(si) {
+    if (!sampleCache.has(si)) {
+      /* Seed from the recorded rng_before of the sample's first step; the
+       * startup RNG-chain check proved that value IS the chained xorshift64
+       * state, so this equals chaining from rng_state_initial. */
+      const seed = BigInt(TRACE.samples[si].steps[0].rng_before);
+      sampleCache.set(si, recomputeSample(model, seed));
+    }
+    return sampleCache.get(si);
+  }
+  function stepCompared(si, pi) {
+    const key = si * 8 + pi;
+    if (!cmpCache.has(key)) {
+      const mine = sampleRecomputed(si).steps[pi];
+      const st = TRACE.samples[si].steps[pi];
+      cmpCache.set(key, mine ? compareStep(st, mine)
+                             : { fields: 0, mismatches: ["step missing from recompute"] });
+    }
+    return cmpCache.get(key);
+  }
+  function stepView(si, pi) {
+    const key = si * 8 + pi;
+    if (!viewCache.has(key)) {
+      const st = TRACE.samples[si].steps[pi];
+      const big = (a) => a.map(BigInt);
+      const B = {
+        emb: big(st.emb), x0: big(st.x0), xn_attn: big(st.xn_attn),
+        q: big(st.q), k: big(st.k), v: big(st.v), ao: big(st.ao),
+        x_mid: big(st.x_mid), xn_mlp: big(st.xn_mlp), h_pre: big(st.h_pre),
+        x_out: big(st.x_out), logits: big(st.logits),
+        logits_scaled: big(st.logits_scaled), probs: big(st.probs),
+        scale_init: BigInt(st.scale_init), scale_attn: BigInt(st.scale_attn),
+        scale_mlp: BigInt(st.scale_mlp), prob_total: BigInt(st.prob_total),
+        r: BigInt(st.r), rng_before: BigInt(st.rng_before),
+        attn: st.attn.map((h) => ({ scores: big(h.scores), weights: big(h.weights) })),
+      };
+      B.cum = [];
+      let c = 0n;
+      for (const p of B.probs) { c += p; B.cum.push(c); }
+      B.wsum = B.attn.map((h) => h.weights.reduce((a, b) => a + b, 0n));
+      B.fire = B.h_pre.reduce((a, v) => a + (v > 0n ? 1 : 0), 0);
+      viewCache.set(key, { st, B });
+    }
+    return viewCache.get(key);
+  }
+
+  /* ---- startup self-check (badge) ---- */
+  const badge = document.getElementById("selfBadge");
+  let startupChecks = 0, startupOk = true, fnvAllOk = false;
+  try {
+    const ok = (cond, msg) => {
+      startupChecks++;
+      if (!cond) { startupOk = false; console.error("self-check FAIL: " + msg); }
+    };
+    runMetaChecks(model, ok);
+    fnvAllOk = runFnvChecks(model, ok);
+    runRngChainChecks(ok);
+    /* full recompute + field compare of sample 0 at startup */
+    const s0 = TRACE.samples[0];
+    const mine0 = sampleRecomputed(0);
+    ok(mine0.steps.length === s0.steps.length, "sample 0 step count");
+    for (let pi = 0; pi < s0.steps.length; pi++) {
+      const res = stepCompared(0, pi);
+      startupChecks += res.fields;
+      if (res.mismatches.length) { startupOk = false; console.error("self-check FAIL:", res.mismatches[0]); }
+    }
+    ok(mine0.text === s0.pristine_text, "sample 0 text == pristine");
+  } catch (e) {
+    startupOk = false;
+    console.error("self-check crashed:", e);
+  }
+  badge.className = "badge " + (startupOk ? "pass" : "fail");
+  badge.textContent = startupOk
+    ? "self-check: " + startupChecks.toLocaleString("en-US") + " checks ✓"
+    : "self-check FAILED — see console";
+
+  const V = TRACE.verification;
+  const oracleBadge = document.getElementById("oracleBadge");
+  const oraclePass = V.pass === true;
+  oracleBadge.className = "badge " + (oraclePass ? "pass" : "fail");
+  oracleBadge.textContent = "C oracle: " + V.steps_compared + " steps, " +
+    (V.logit_mismatches + V.kv_mismatches + V.sample_mismatches) + " mismatches";
+
+  /* ---- UI state ---- */
+  const UI = {
+    si: 0, pi: 0, playing: false, playLast: null, mlpPost: false, dirty: true,
+    resCur: { r: 0, c: 0 }, resHover: null,
+    attnCur: { h: 0, s: 0 }, attnHover: null,
+    mlpCur: 0, mlpHover: null,
+    outCur: 0, outHover: null,
+    roulCur: null, roulHover: null,
+  };
+  const el = (id) => document.getElementById(id);
+  const tip = el("tip");
+  const cells = { res: [], attn: [[], [], [], []], mlp: [], out: [], roul: [] };
+
+  /* ---- display-only color ramps (quantized for batched fills) ---- */
+  const RAMP_N = 24;
+  function mix(c1, c2, t) {
+    const r = Math.round(c1[0] + (c2[0] - c1[0]) * t);
+    const g = Math.round(c1[1] + (c2[1] - c1[1]) * t);
+    const b = Math.round(c1[2] + (c2[2] - c1[2]) * t);
+    return "rgb(" + r + "," + g + "," + b + ")";
+  }
+  const NEUT = [24, 29, 42], CNEG = [77, 171, 247], CPOS = [255, 169, 77];
+  const SURF = [15, 19, 28], CGOLD = [255, 209, 102];
+  const DIVNEG = [], DIVPOS = [], GOLDR = [];
+  for (let i = 0; i <= RAMP_N; i++) {
+    DIVNEG.push(mix(NEUT, CNEG, i / RAMP_N));
+    DIVPOS.push(mix(NEUT, CPOS, i / RAMP_N));
+    GOLDR.push(mix(SURF, CGOLD, i / RAMP_N));
+  }
+  function divColor(t) {   /* t in [-1,1], display-only */
+    const i = Math.min(RAMP_N, Math.round(Math.abs(t) * RAMP_N));
+    return t < 0 ? DIVNEG[i] : DIVPOS[i];
+  }
+  function goldColor(t) {  /* t in [0,1], display-only */
+    return GOLDR[Math.min(RAMP_N, Math.max(0, Math.round(t * RAMP_N)))];
+  }
+  function maxAbsBig(arr) {
+    let m = 0n;
+    for (const v of arr) { const a = v < 0n ? -v : v; if (a > m) m = a; }
+    return m;
+  }
+  function fillBatched(ctx, items) {  /* items: {color,x,y,w,h} */
+    const buckets = new Map();
+    for (const it of items) {
+      let a = buckets.get(it.color);
+      if (!a) buckets.set(it.color, a = []);
+      a.push(it);
+    }
+    for (const [color, arr] of buckets) {
+      ctx.fillStyle = color;
+      for (const it of arr) ctx.fillRect(it.x, it.y, it.w, it.h);
+    }
+  }
+  function sizeCanvas(cnv, cssH) {  /* devicePixelRatio-aware */
+    const cssW = Math.max(120, cnv.clientWidth || cnv.parentElement.clientWidth - 2);
+    const dpr = window.devicePixelRatio || 1;
+    cnv.width = Math.round(cssW * dpr);
+    cnv.height = Math.round(cssH * dpr);
+    cnv.style.height = cssH + "px";
+    const ctx = cnv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    return { ctx, W: cssW, H: cssH };
+  }
+  const INK = "#cdd6f4", DIM = "#7f849c", LINE = "#262c3a", GOLD = "#ffd166";
+  const HEADC = ["#fa5252", "#fab005", "#38d9a9", "#4dabf7"];
+
+  function curStep() { return stepView(UI.si, UI.pi); }
+  function stepCount() { return TRACE.samples[UI.si].steps.length; }
+
+  /* ---- sample strip + timeline ---- */
+  function buildSampleStrip() {
+    const strip = el("sampleStrip");
+    strip.textContent = "";
+    TRACE.samples.forEach((s, i) => {
+      const b = document.createElement("button");
+      b.className = "mono" + (i === UI.si ? " on" : "");
+      b.textContent = (i + 1) + "·" + s.text;
+      b.setAttribute("role", "option");
+      b.setAttribute("aria-selected", i === UI.si ? "true" : "false");
+      b.title = "sample " + (i + 1) + ": \"" + s.text + "\" (" + s.steps.length + " steps)";
+      b.addEventListener("click", () => selectSample(i));
+      strip.appendChild(b);
+    });
+  }
+  function buildTimeline() {
+    const tl = el("timeline");
+    tl.textContent = "";
+    const mk = (txt, id, fn, label) => {
+      const b = document.createElement("button");
+      b.textContent = txt; b.id = id; b.className = "navbtn";
+      b.setAttribute("aria-label", label);
+      b.addEventListener("click", fn);
+      tl.appendChild(b);
+      return b;
+    };
+    mk("◀", "btnPrev", () => selectStep(UI.pi - 1), "previous step");
+    mk(UI.playing ? "■ stop" : "▶ play", "btnPlay", togglePlay, "autoplay steps");
+    mk("▶", "btnNext", () => selectStep(UI.pi + 1), "next step");
+    TRACE.samples[UI.si].steps.forEach((st, pi) => {
+      const b = document.createElement("button");
+      b.className = "stepchip mono" + (pi === UI.pi ? " on" : "");
+      b.textContent = "p" + st.pos + " " + tokChar(st.token_in) + "→" + tokChar(st.chosen);
+      b.title = "step " + (pi + 1) + "/" + stepCount() + ": input " + tokLabel(st.token_in) +
+                ", chosen " + tokLabel(st.chosen);
+      b.addEventListener("click", () => selectStep(pi));
+      tl.appendChild(b);
+    });
+  }
+  function refreshTimelineSel() {
+    const tl = el("timeline");
+    tl.querySelectorAll(".stepchip").forEach((b, pi) => {
+      b.classList.toggle("on", pi === UI.pi);
+    });
+    const strip = el("sampleStrip");
+    strip.querySelectorAll("button").forEach((b, i) => {
+      b.classList.toggle("on", i === UI.si);
+      b.setAttribute("aria-selected", i === UI.si ? "true" : "false");
+    });
+    const play = el("btnPlay");
+    if (play) play.textContent = UI.playing ? "■ stop" : "▶ play";
+  }
+  function selectSample(i) {
+    UI.si = Math.max(0, Math.min(TRACE.samples.length - 1, i));
+    UI.pi = 0;
+    UI.playing = false; UI.playLast = null;
+    UI.attnCur.s = 0; UI.roulCur = null;
+    buildTimeline();
+    refreshTimelineSel();
+    UI.dirty = true;
+  }
+  function selectStep(pi) {
+    const clamped = Math.max(0, Math.min(stepCount() - 1, pi));
+    if (clamped === UI.pi) return;
+    UI.pi = clamped;
+    if (UI.attnCur.s > UI.pi) UI.attnCur.s = UI.pi;
+    refreshTimelineSel();
+    UI.dirty = true;
+  }
+  function togglePlay() {
+    if (!UI.playing && UI.pi >= stepCount() - 1) UI.pi = 0;  /* replay from start */
+    UI.playing = !UI.playing;
+    UI.playLast = null;
+    refreshTimelineSel();
+    UI.dirty = true;
+  }
+
+  /* ---- residual stream panel ---- */
+  const RES_STRIPS = [
+    { key: "emb",    hdr: () => "emb = wte[" + tokLabel(curStep().st.token_in) + "] + wpe[p" + curStep().st.pos + "]  (raw int64 add, pre-norm)" },
+    { key: "x0",     hdr: () => "x0 = RMSNorm(emb) = fp_mul(emb[i], scale_init);  scale_init = " + shortDec(curStep().B.scale_init, 14) },
+    { key: "xn_attn", hdr: () => "xn_attn = RMSNorm(x0);  scale_attn = " + shortDec(curStep().B.scale_attn, 14) + "  → feeds Wq · Wk · Wv" },
+    { key: "x_mid",  hdr: () => "x_mid = x0 + Wo(ao)  (residual add ↤)" },
+    { key: "xn_mlp", hdr: () => "xn_mlp = RMSNorm(x_mid);  scale_mlp = " + shortDec(curStep().B.scale_mlp, 14) + "  → feeds fc1" },
+    { key: "x_out",  hdr: () => "x_out = x_mid + fc2(ReLU(h_pre))  (residual add ↤; lm_head reads this, no final norm)" },
+  ];
+  function renderResidual() {
+    const HDR = 13, CH = 20, GAP = 14;
+    const H = 6 * (HDR + CH) + 5 * GAP + 6;
+    const { ctx, W } = sizeCanvas(el("cnvRes"), H);
+    const L = 18, R = 22;
+    const cw = (W - L - R) / 32;
+    cells.res = [];
+    ctx.font = "10px " + getComputedStyle(document.body).getPropertyValue("--mono");
+    ctx.textBaseline = "middle";
+    let y = 2;
+    const rowY = [];
+    RES_STRIPS.forEach((strip, r) => {
+      const vec = curStep().B[strip.key];
+      const mA = maxAbsBig(vec);
+      const mN = Number(mA);            /* display-only */
+      /* header */
+      ctx.fillStyle = DIM;
+      ctx.fillText(strip.hdr(), L, y + HDR / 2);
+      const lbl = "±" + shortDec(mA, 9);
+      ctx.fillStyle = INK;
+      ctx.textAlign = "right";
+      ctx.fillText(lbl, W - 2, y + HDR / 2);
+      ctx.textAlign = "left";
+      y += HDR;
+      /* cells (batched by quantized ramp color; geometry display-only) */
+      const items = [];
+      for (let c = 0; c < 32; c++) {
+        const v = vec[c];
+        const t = mN === 0 ? 0 : Number(v) / mN;
+        const x = L + c * cw;
+        items.push({ color: divColor(t), x: x, y: y, w: Math.max(1, cw - 1), h: CH - 2 });
+        cells.res.push({ x: x, y: y, w: cw, h: CH, r: r, c: c });
+      }
+      fillBatched(ctx, items);
+      rowY.push({ top: y, mid: y + CH / 2, bot: y + CH });
+      y += CH;
+      if (r < 5) {
+        /* flow lane arrow (left) */
+        ctx.strokeStyle = DIM; ctx.fillStyle = DIM; ctx.lineWidth = 1;
+        const ax = L / 2;
+        ctx.beginPath(); ctx.moveTo(ax, y + 1); ctx.lineTo(ax, y + GAP - 4); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(ax - 3, y + GAP - 5); ctx.lineTo(ax + 3, y + GAP - 5); ctx.lineTo(ax, y + GAP - 1);
+        ctx.closePath(); ctx.fill();
+        y += GAP;
+      }
+    });
+    /* residual-add brackets (right lane): x0 -> x_mid, x_mid -> x_out */
+    ctx.strokeStyle = "#8a7a3a"; ctx.lineWidth = 1;
+    const bracket = (r1, r2, lane) => {
+      const x = W - lane;
+      ctx.beginPath();
+      ctx.moveTo(W - R + 3, rowY[r1].mid);
+      ctx.lineTo(x, rowY[r1].mid);
+      ctx.lineTo(x, rowY[r2].mid);
+      ctx.lineTo(W - R + 3, rowY[r2].mid);
+      ctx.stroke();
+      ctx.fillStyle = GOLD;
+      ctx.fillText("+", x - 3, rowY[r2].mid - 7);
+    };
+    bracket(1, 3, 8);   /* x0 into x_mid */
+    bracket(3, 5, 14);  /* x_mid into x_out */
+    /* cursor + hover outline */
+    const cur = UI.resHover || UI.resCur;
+    if (cur) {
+      const cell = cells.res.find((q) => q.r === cur.r && q.c === cur.c);
+      if (cell) {
+        ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
+        ctx.strokeRect(cell.x + 0.5, cell.y + 0.5, cell.w - 1, cell.h - 2);
+      }
+    }
+    el("resLegend").innerHTML =
+      '<span><span class="sw" style="background:' + DIVNEG[RAMP_N] + '"></span>negative</span>' +
+      '<span><span class="sw" style="background:rgb(24,29,42)"></span>zero</span>' +
+      '<span><span class="sw" style="background:' + DIVPOS[RAMP_N] + '"></span>positive</span>' +
+      '<span>each strip scaled to its own max |value| (labeled ± on the right; "…" marks a truncated exact decimal)</span>' +
+      '<span>left lane = data flow; right gold brackets = the two residual adds</span>';
+    updateResInspect();
+  }
+  function updateResInspect() {
+    const cur = UI.resHover || UI.resCur;
+    const box = el("insRes");
+    if (!cur) { box.textContent = "hover a cell, or focus the grid and use arrow keys."; return; }
+    const strip = RES_STRIPS[cur.r];
+    const v = curStep().B[strip.key][cur.c];
+    const cmp = stepCompared(UI.si, UI.pi);
+    box.innerHTML = q48Html(strip.key + "[" + cur.c + "]", v) +
+      '<br><span class="k">stage</span> ' + strip.hdr() +
+      '<br><span class="k">status</span> recorded C value; recomputed in BigInt this session — ' +
+      (cmp.mismatches.length === 0 ? 'equal ✓' : 'MISMATCH — see Verification');
+  }
+
+  /* ---- attention panel ---- */
+  function buildHeadGrid() {
+    const grid = el("headGrid");
+    grid.textContent = "";
+    for (let h = 0; h < NH; h++) {
+      const wrap = document.createElement("div");
+      const hdr = document.createElement("div");
+      hdr.className = "headhdr";
+      hdr.innerHTML = '<span class="hdot" style="background:' + HEADC[h] + '"></span>head ' + h +
+        ' · rows ' + (h * 8) + '..' + (h * 8 + 7);
+      const cnv = document.createElement("canvas");
+      cnv.className = "grid"; cnv.id = "cnvA" + h;
+      cnv.tabIndex = 0;
+      cnv.setAttribute("aria-label", "attention head " + h + " weights and scores; left and right arrows move the key cursor");
+      cnv.dataset.head = h;
+      const sum = document.createElement("div");
+      sum.className = "headsum"; sum.id = "wsum" + h;
+      wrap.appendChild(hdr); wrap.appendChild(cnv); wrap.appendChild(sum);
+      grid.appendChild(wrap);
+      attachAttnEvents(cnv, h);
+    }
+  }
+  function renderAttn() {
+    const sv = curStep();
+    const pos = sv.st.pos;
+    let scoreMax = 0n;
+    for (let h = 0; h < NH; h++) {
+      const m = maxAbsBig(sv.B.attn[h].scores);
+      if (m > scoreMax) scoreMax = m;
+    }
+    const scoreMaxN = Number(scoreMax);  /* display-only */
+    el("attnScale").textContent =
+      "pre-softmax score scale (shared by all heads): ±" + shortDec(scoreMax, 12) +
+      " · attn_scale = fp_inv_sqrt(8) = " + decStr(model.attnScale) + " (raw " + model.attnScale + ")";
+    for (let h = 0; h < NH; h++) {
+      const cnv = el("cnvA" + h);
+      const BARH = 52, SCH = 9, CHH = 13;
+      const H = BARH + 3 + SCH + 2 + CHH + 4;
+      const { ctx, W } = sizeCanvas(cnv, H);
+      const slotW = (W - 6) / 8;   /* fixed 8 slots: geometry stable across steps */
+      cells.attn[h] = [];
+      ctx.font = "10px " + getComputedStyle(document.body).getPropertyValue("--mono");
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      /* axis */
+      ctx.strokeStyle = LINE;
+      ctx.beginPath(); ctx.moveTo(3, BARH + 0.5); ctx.lineTo(W - 3, BARH + 0.5); ctx.stroke();
+      const items = [];
+      for (let s = 0; s <= pos; s++) {
+        const wRaw = sv.B.attn[h].weights[s];
+        const sRaw = sv.B.attn[h].scores[s];
+        const x = 3 + s * slotW;
+        const t = Number(wRaw) / Number(FP1);          /* display-only */
+        const bh = Math.max(1, Math.round(t * (BARH - 2)));
+        items.push({ color: goldColor(t), x: x + 3, y: BARH - bh, w: Math.max(2, slotW - 6), h: bh });
+        const ts = scoreMaxN === 0 ? 0 : Number(sRaw) / scoreMaxN;
+        items.push({ color: divColor(ts), x: x + 3, y: BARH + 3, w: Math.max(2, slotW - 6), h: SCH });
+        cells.attn[h].push({ x: x, y: 0, w: slotW, h: H, s: s });
+      }
+      fillBatched(ctx, items);
+      for (let s = 0; s <= pos; s++) {
+        const x = 3 + s * slotW;
+        ctx.fillStyle = INK;
+        ctx.fillText(tokChar(TRACE.samples[UI.si].steps[s].token_in),
+                     x + slotW / 2, BARH + 3 + SCH + 2 + CHH / 2);
+      }
+      /* cursor */
+      const isCur = (UI.attnHover && UI.attnHover.h === h) ? UI.attnHover
+                  : (UI.attnCur.h === h ? UI.attnCur : null);
+      if (isCur && isCur.s <= pos) {
+        const x = 3 + isCur.s * slotW;
+        ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
+        ctx.strokeRect(x + 1.5, 0.5, slotW - 3, BARH + 3 + SCH);
+      }
+      ctx.textAlign = "left";
+      const wsum = sv.B.wsum[h];
+      const gap = FP1 - wsum;
+      el("wsum" + h).textContent = "Σ weights (exact BigInt) = " + decStr(wsum) +
+        (gap === 0n ? " = FP_ONE exactly" : gap > 0n ? " (FP_ONE - " + gap + " ulp)" : " (FP_ONE + " + (-gap) + " ulp)");
+    }
+    el("attnLegend").innerHTML =
+      '<span><span class="sw" style="background:' + GOLDR[RAMP_N] + '"></span>weight (height = value ∈ [0,1])</span>' +
+      '<span><span class="sw" style="background:' + DIVNEG[RAMP_N] + '"></span><span class="sw" style="background:' +
+      DIVPOS[RAMP_N] + '"></span>thin strip: signed pre-softmax score</span>' +
+      '<span>letter = input char at that key position (⌀ = BOS)</span>' +
+      '<span>the exact Σ is what the integers give — a few ulp of truncation is the point</span>';
+    updateAttnInspect();
+  }
+  function updateAttnInspect() {
+    const sv = curStep();
+    const cur = UI.attnHover || UI.attnCur;
+    const box = el("insAttn");
+    if (!cur || cur.s > sv.st.pos) { box.textContent = "hover a bar, or focus a head and use ← →."; return; }
+    const sc = sv.B.attn[cur.h].scores[cur.s];
+    const w = sv.B.attn[cur.h].weights[cur.s];
+    box.innerHTML =
+      '<span class="k">head</span> ' + cur.h + ' · <span class="k">key pos</span> ' + cur.s +
+      ' (input ' + tokLabel(TRACE.samples[UI.si].steps[cur.s].token_in) + ')' +
+      '<br>' + q48Html("score", sc) +
+      '<br>' + q48Html("weight", w) +
+      '<br><span class="k">score</span> = fp_mul(Σ_j fp_mul(q[' + (cur.h * 8) + '..' + (cur.h * 8 + 7) +
+      '], k(pos ' + cur.s + ')), attn_scale); softmax: max-subtract, fp_safe_exp, ÷ sum';
+  }
+  function attnTipHtml(h, s) {
+    const sv = curStep();
+    return '<span class="k">head</span> ' + h + ' · key p' + s + ' ' +
+      tokLabel(TRACE.samples[UI.si].steps[s].token_in) +
+      '<br><span class="k">score</span> raw=' + sv.B.attn[h].scores[s] +
+      ' exact=' + decStr(sv.B.attn[h].scores[s]) +
+      '<br><span class="k">weight</span> raw=' + sv.B.attn[h].weights[s] +
+      ' exact=' + decStr(sv.B.attn[h].weights[s]);
+  }
+  function attachAttnEvents(cnv, h) {
+    cnv.addEventListener("mousemove", (e) => {
+      const p = pickCell(cnv, cells.attn[h], e);
+      const pos = curStep().st.pos;
+      if (p && p.s <= pos) {
+        UI.attnHover = { h: h, s: p.s };
+        showTip(e, attnTipHtml(h, p.s));
+      } else { UI.attnHover = null; hideTip(); }
+      UI.dirty = true;
+    });
+    cnv.addEventListener("mouseleave", () => { UI.attnHover = null; hideTip(); UI.dirty = true; });
+    cnv.addEventListener("click", (e) => {
+      const p = pickCell(cnv, cells.attn[h], e);
+      if (p && p.s <= curStep().st.pos) { UI.attnCur = { h: h, s: p.s }; UI.dirty = true; }
+    });
+    cnv.addEventListener("keydown", (e) => {
+      const pos = curStep().st.pos;
+      let used = true;
+      if (e.key === "ArrowLeft") UI.attnCur = { h: h, s: Math.max(0, (UI.attnCur.h === h ? UI.attnCur.s : 0) - 1) };
+      else if (e.key === "ArrowRight") UI.attnCur = { h: h, s: Math.min(pos, (UI.attnCur.h === h ? UI.attnCur.s : 0) + 1) };
+      else used = false;
+      if (used) { e.preventDefault(); UI.dirty = true; }
+    });
+    cnv.addEventListener("focus", () => { UI.attnCur = { h: h, s: Math.min(UI.attnCur.s, curStep().st.pos) }; UI.dirty = true; });
+  }
+
+  /* ---- MLP panel ---- */
+  function renderMlp() {
+    const CH = 20;
+    const H = 8 * CH + 6;
+    const { ctx, W } = sizeCanvas(el("cnvMlp"), H);
+    const cw = (W - 6) / 16;
+    const sv = curStep();
+    const vec = sv.B.h_pre;
+    const mA = maxAbsBig(vec);
+    const mN = Number(mA);               /* display-only */
+    cells.mlp = [];
+    const items = [];
+    ctx.strokeStyle = LINE;
+    for (let i = 0; i < MD; i++) {
+      const row = Math.floor(i / 16), col = i % 16;
+      const x = 3 + col * cw, y = 2 + row * CH;
+      const v = vec[i];
+      cells.mlp.push({ x: x, y: y, w: cw, h: CH, i: i });
+      if (UI.mlpPost && v <= 0n) {
+        ctx.strokeRect(x + 0.5, y + 0.5, cw - 2, CH - 3);   /* extinguished: outline only */
+      } else {
+        const t = mN === 0 ? 0 : Number(v) / mN;
+        items.push({ color: divColor(UI.mlpPost ? Math.max(0, t) : t),
+                     x: x, y: y, w: Math.max(1, cw - 1), h: CH - 2 });
+      }
+    }
+    fillBatched(ctx, items);
+    const cur = UI.mlpHover != null ? UI.mlpHover : UI.mlpCur;
+    if (cur != null && cells.mlp[cur]) {
+      const cell = cells.mlp[cur];
+      ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
+      ctx.strokeRect(cell.x + 0.5, cell.y + 0.5, cell.w - 1, cell.h - 2);
+    }
+    el("mlpFire").textContent = sv.B.fire + "/128 fire (h_pre > 0, the exact C ReLU predicate) · scale ±" + shortDec(mA, 10);
+    el("mlpLegend").innerHTML =
+      '<span><span class="sw" style="background:' + DIVNEG[RAMP_N] + '"></span>negative</span>' +
+      '<span><span class="sw" style="background:rgb(24,29,42)"></span>zero</span>' +
+      '<span><span class="sw" style="background:' + DIVPOS[RAMP_N] + '"></span>positive</span>' +
+      '<span>' + (UI.mlpPost ? "post-ReLU: outline-only cells are extinguished (post = max(0, h_pre))"
+                             : "pre-ReLU values as computed by fc1") + '</span>';
+    updateMlpInspect();
+  }
+  function updateMlpInspect() {
+    const cur = UI.mlpHover != null ? UI.mlpHover : UI.mlpCur;
+    const box = el("insMlp");
+    if (cur == null) { box.textContent = "hover a unit, or focus the grid and use arrow keys."; return; }
+    const v = curStep().B.h_pre[cur];
+    const post = v > 0n ? v : 0n;
+    box.innerHTML =
+      '<span class="k">unit</span> ' + cur + ' <span class="k">(fc1 row ' + cur + ', weights fc1[' +
+      (cur * 32) + '..' + (cur * 32 + 31) + '])</span>' +
+      '<br>' + q48Html("h_pre[" + cur + "]", v) +
+      '<br>' + q48Html("post-ReLU", post) + (v > 0n ? ' <span class="k">(fires)</span>' : ' <span class="k">(extinguished)</span>') +
+      '<br><span class="k">h_pre[i] = Σ_c fp_mul(mlp_fc1[i·32+c], xn_mlp[c])</span>';
+  }
+
+  /* ---- output & sampling panel ---- */
+  function renderOutput() {
+    const ROWH = 16, TOPH = 15;
+    const H = TOPH + VOC * ROWH + 4;
+    const { ctx, W } = sizeCanvas(el("cnvOut"), H);
+    const sv = curStep();
+    const labW = 34;
+    const gaps = 10;
+    const areaW = (W - labW - 3 * gaps) / 3;
+    const xLog = labW + gaps, xSc = xLog + areaW + gaps, xPr = xSc + areaW + gaps;
+    const scMax = maxAbsBig(sv.B.logits_scaled);   /* shared scale: |scaled| = 2|logits| */
+    const scMaxN = Number(scMax);                  /* display-only */
+    let prMax = 0n;
+    for (const p of sv.B.probs) if (p > prMax) prMax = p;
+    const prMaxN = Number(prMax);
+    cells.out = [];
+    ctx.font = "10px " + getComputedStyle(document.body).getPropertyValue("--mono");
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = DIM;
+    ctx.fillText("logits (± " + shortDec(scMax, 8) + " shared scale)", xLog, TOPH / 2);
+    ctx.fillText("logits ×2 exact (asserted)", xSc, TOPH / 2);
+    ctx.fillText("probs (max " + shortDec(prMax, 8) + ")", xPr, TOPH / 2);
+    /* zero axes */
+    ctx.strokeStyle = LINE;
+    for (const ax of [xLog + areaW / 2, xSc + areaW / 2]) {
+      ctx.beginPath(); ctx.moveTo(ax + 0.5, TOPH); ctx.lineTo(ax + 0.5, H - 3); ctx.stroke();
+    }
+    const items = [];
+    for (let i = 0; i < VOC; i++) {
+      const y = TOPH + i * ROWH;
+      cells.out.push({ x: 0, y: y, w: W, h: ROWH, i: i });
+      const lg = sv.B.logits[i], sc = sv.B.logits_scaled[i], pr = sv.B.probs[i];
+      const tl = scMaxN === 0 ? 0 : Number(lg) / scMaxN;     /* logits on the ×2 scale */
+      const tsc = scMaxN === 0 ? 0 : Number(sc) / scMaxN;
+      const barH = ROWH - 5;
+      const half = areaW / 2 - 2;
+      const bar = (x0, t) => {
+        const len = Math.round(Math.abs(t) * half);
+        items.push({ color: divColor(t),
+                     x: t < 0 ? x0 + areaW / 2 - len : x0 + areaW / 2 + 1,
+                     y: y + 2, w: Math.max(1, len), h: barH });
+      };
+      bar(xLog, tl);
+      bar(xSc, tsc);
+      const tp = Number(pr) / Number(FP1);                    /* absolute [0,1] ramp */
+      const plen = prMaxN === 0 ? 0 : Math.round(Number(pr) / prMaxN * (areaW - 4));
+      items.push({ color: goldColor(tp), x: xPr, y: y + 2, w: Math.max(1, plen), h: barH });
+    }
+    fillBatched(ctx, items);
+    for (let i = 0; i < VOC; i++) {
+      const y = TOPH + i * ROWH;
+      ctx.fillStyle = i === sv.st.chosen ? GOLD : INK;
+      ctx.fillText(tokChar(i) + " " + i, 3, y + ROWH / 2);
+    }
+    const chY = TOPH + sv.st.chosen * ROWH;
+    ctx.strokeStyle = GOLD; ctx.lineWidth = 1;
+    ctx.strokeRect(1, chY + 0.5, W - 2, ROWH - 1);
+    ctx.fillStyle = GOLD;
+    ctx.textAlign = "right";
+    ctx.fillText("← chosen " + tokLabel(sv.st.chosen), W - 4, chY + ROWH / 2);
+    ctx.textAlign = "left";
+    const cur = UI.outHover != null ? UI.outHover : UI.outCur;
+    if (cur != null) {
+      ctx.strokeStyle = "#5a637a";
+      ctx.strokeRect(1, TOPH + cur * ROWH + 0.5, W - 2, ROWH - 1);
+    }
+    updateOutInspect();
+  }
+  function updateOutInspect() {
+    const cur = UI.outHover != null ? UI.outHover : UI.outCur;
+    const box = el("insOut");
+    if (cur == null) { box.textContent = "hover a row, or focus the grid and use ↑ ↓."; return; }
+    const sv = curStep();
+    box.innerHTML =
+      '<span class="k">token</span> ' + tokLabel(cur) +
+      '<br>' + q48Html("logit", sv.B.logits[cur]) +
+      '<br>' + q48Html("logit×2", sv.B.logits_scaled[cur]) +
+      ' <span class="k">(fp_mul(logit, inv_temperature=2.0) — exact doubling, asserted)</span>' +
+      '<br>' + q48Html("prob", sv.B.probs[cur]) +
+      '<br>' + q48Html("cumulative Σ probs[0..' + cur + ']", sv.B.cum[cur]);
+  }
+  function renderRoulette() {
+    const H = 46;
+    const { ctx, W } = sizeCanvas(el("cnvRoul"), H);
+    const sv = curStep();
+    const total = sv.B.prob_total;
+    const totalN = Number(total);        /* display-only geometry */
+    const y0 = 12, barH = 20;
+    cells.roul = [];
+    ctx.font = "10px " + getComputedStyle(document.body).getPropertyValue("--mono");
+    ctx.textBaseline = "middle";
+    let prevX = 0;
+    for (let i = 0; i < VOC; i++) {
+      const cumN = Number(sv.B.cum[i]);
+      const x1 = totalN === 0 ? 0 : Math.round(cumN / totalN * (W - 2)) + 1;
+      const w = Math.max(0, x1 - prevX);
+      const chosen = i === sv.st.chosen;
+      ctx.fillStyle = chosen ? GOLD : (i % 2 === 0 ? "#1a2130" : "#232b3d");
+      if (w > 0) ctx.fillRect(prevX, y0, w, barH);
+      if (w >= 13) {
+        ctx.fillStyle = chosen ? "#0b0e14" : DIM;
+        ctx.textAlign = "center";
+        ctx.fillText(tokChar(i), prevX + w / 2, y0 + barH / 2);
+        ctx.textAlign = "left";
+      }
+      cells.roul.push({ x: prevX, y: y0, w: w, h: barH, i: i });
+      prevX = x1;
+    }
+    const cur = UI.roulHover != null ? UI.roulHover : UI.roulCur;
+    if (cur != null && cells.roul[cur] && cells.roul[cur].w > 0) {
+      const c = cells.roul[cur];
+      ctx.strokeStyle = INK; ctx.lineWidth = 1;
+      ctx.strokeRect(c.x + 0.5, y0 + 0.5, Math.max(1, c.w - 1), barH - 1);
+    }
+    /* marker at r (position display-only float; label exact) */
+    const rx = totalN === 0 ? 0 : Number(sv.B.r) / totalN * (W - 2) + 1;
+    ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(rx, 3); ctx.lineTo(rx, y0 + barH + 3); ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.moveTo(rx - 4, 3); ctx.lineTo(rx + 4, 3); ctx.lineTo(rx, 9); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = INK;
+    ctx.textAlign = rx > W - 60 ? "right" : "left";
+    ctx.fillText("r = " + shortDec(sv.B.r, 10), rx + (rx > W - 60 ? -6 : 6), 7);
+    ctx.textAlign = "left";
+    ctx.fillStyle = DIM;
+    ctx.fillText("0", 1, y0 + barH + 9);
+    ctx.textAlign = "right";
+    ctx.fillText("prob_total = " + shortDec(total, 14), W - 1, y0 + barH + 9);
+    ctx.textAlign = "left";
+    /* callout + text lines */
+    el("totLine").textContent = "prob_total = Σ probs = " + total + " = " + decStr(total) + "  " + ulpGapText(total);
+    const mine = sampleRecomputed(UI.si).steps[UI.pi];
+    const stateAfter = mine ? mine.rngAfter : 0n;
+    const uniform = mine ? mine.uniform : 0n;
+    el("roulText").innerHTML =
+      '<div class="kvline"><span class="k">rng_before</span> = ' + sv.B.rng_before + ' = ' + u64hex(sv.B.rng_before) +
+      ' <span class="k">(xorshift64 state; recorded, chain-verified from rng_state_initial)</span></div>' +
+      '<div class="kvline"><span class="k">draw</span> s^=s≪13; s^=s≫7; s^=s≪17 → state = ' + stateAfter +
+      '; uniform = state ≫ 16 = ' + uniform + ' = ' + decStr(uniform) + ' <span class="k">(top 48 bits, Q16.48 in [0,1); recomputed, verified via r)</span></div>' +
+      '<div class="kvline"><span class="k">threshold</span> r = fp_mul(uniform, prob_total) = ' + sv.B.r + ' = ' + decStr(sv.B.r) +
+      ' <span class="k">(recorded = recomputed ✓)</span></div>' +
+      '<div class="kvline"><span class="k">selection</span> C weighted_choice: <b>cum += probs[i]; if (r &lt; cum) return i;</b>' +
+      ' — first token whose cumulative sum exceeds r ⇒ ' + tokLabel(sv.st.chosen) +
+      (sv.st.chosen === BOSID ? ' <span class="k">(BOS: sample ends here)</span>' : '') + '</div>';
+  }
+
+  /* ---- verification panel ---- */
+  function renderVerify() {
+    const cmp = stepCompared(UI.si, UI.pi);
+    const sres = sampleRecomputed(UI.si);
+    const sm = TRACE.samples[UI.si];
+    const stepOk = cmp.mismatches.length === 0;
+    el("verStep").innerHTML = stepOk
+      ? '<span class="ok">✓</span> this step, recomputed in your browser (BigInt, exact): <b>' +
+        cmp.fields + ' fields equal</b> — sample «' + sm.text + '», step p' + UI.pi +
+        ' (emb, x0, scales, xn_attn, q/k/v, all heads’ scores &amp; weights, ao, x_mid, xn_mlp, h_pre, x_out, logits, ×2 scaling, probs, prob_total, rng, r, chosen)'
+      : '<span class="bad">✗ ' + cmp.mismatches.length + ' mismatching field(s):</span> ' +
+        cmp.mismatches.slice(0, 5).join(" · ");
+    const textOk = sres.text === sm.pristine_text;
+    el("verSample").innerHTML = (textOk ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>') +
+      ' sample chain (KV cache rebuilt by recomputation, RNG threaded): reassembled text «' + sres.text +
+      '» ' + (textOk ? '=' : '≠') + ' pristine «' + sm.pristine_text + '» · ' + sres.steps.length + ' steps';
+    const V2 = TRACE.verification;
+    el("verGlobal").innerHTML = (V2.pass ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>') +
+      ' C oracle (tools/trace_harness.c vs the untouched runtime): ' + V2.steps_compared + '/' + V2.steps_compared +
+      ' steps compared, ' + V2.logit_mismatches + ' logit mismatches, ' + V2.kv_mismatches +
+      ' KV mismatches, 20/20 samples equal the pristine generation, final RNG state ' +
+      (V2.rng_final_match ? 'equal (' + V2.rng_final_pristine + ')' : 'MISMATCH');
+    el("verFnv").innerHTML = (fnvAllOk ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>') +
+      ' model integrity: 9/9 tensor FNV-1a64 checksums recomputed from the embedded model.mgw match the C harness · sha256 ' +
+      SUMMARY.model_sha256.slice(0, 16) + '…';
+  }
+
+  /* ---- shared canvas plumbing ---- */
+  function pickCell(cnv, list, e) {
+    const rect = cnv.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    for (const c of list) {
+      if (mx >= c.x && mx < c.x + c.w && my >= c.y && my < c.y + c.h) return c;
+    }
+    return null;
+  }
+  function showTip(e, html) {
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    const pad = 14;
+    let x = e.clientX + pad, y = e.clientY + pad;
+    const bw = tip.offsetWidth, bh = tip.offsetHeight;
+    if (x + bw > window.innerWidth - 8) x = e.clientX - bw - pad;
+    if (y + bh > window.innerHeight - 8) y = e.clientY - bh - pad;
+    tip.style.left = Math.max(4, x) + "px";
+    tip.style.top = Math.max(4, y) + "px";
+  }
+  function hideTip() { tip.style.display = "none"; }
+
+  const cnvRes = el("cnvRes");
+  cnvRes.addEventListener("mousemove", (e) => {
+    const p = pickCell(cnvRes, cells.res, e);
+    if (p) {
+      UI.resHover = { r: p.r, c: p.c };
+      const strip = RES_STRIPS[p.r];
+      const v = curStep().B[strip.key][p.c];
+      showTip(e, '<span class="k">' + strip.key + '[' + p.c + ']</span><br>raw=' + v +
+                 '<br>hex=' + Q48.toHex(v) + '<br>exact=' + decStr(v));
+    } else { UI.resHover = null; hideTip(); }
+    UI.dirty = true;
+  });
+  cnvRes.addEventListener("mouseleave", () => { UI.resHover = null; hideTip(); UI.dirty = true; });
+  cnvRes.addEventListener("click", (e) => {
+    const p = pickCell(cnvRes, cells.res, e);
+    if (p) { UI.resCur = { r: p.r, c: p.c }; UI.dirty = true; }
+  });
+  cnvRes.addEventListener("keydown", (e) => {
+    let used = true;
+    const c = UI.resCur;
+    if (e.key === "ArrowLeft") c.c = Math.max(0, c.c - 1);
+    else if (e.key === "ArrowRight") c.c = Math.min(31, c.c + 1);
+    else if (e.key === "ArrowUp") c.r = Math.max(0, c.r - 1);
+    else if (e.key === "ArrowDown") c.r = Math.min(5, c.r + 1);
+    else used = false;
+    if (used) { e.preventDefault(); UI.dirty = true; }
+  });
+
+  const cnvMlp = el("cnvMlp");
+  cnvMlp.addEventListener("mousemove", (e) => {
+    const p = pickCell(cnvMlp, cells.mlp, e);
+    if (p) {
+      UI.mlpHover = p.i;
+      const v = curStep().B.h_pre[p.i];
+      showTip(e, '<span class="k">h_pre[' + p.i + ']</span><br>raw=' + v +
+                 '<br>hex=' + Q48.toHex(v) + '<br>exact=' + decStr(v) +
+                 '<br><span class="k">' + (v > 0n ? "fires" : "extinguished (ReLU → 0)") + '</span>');
+    } else { UI.mlpHover = null; hideTip(); }
+    UI.dirty = true;
+  });
+  cnvMlp.addEventListener("mouseleave", () => { UI.mlpHover = null; hideTip(); UI.dirty = true; });
+  cnvMlp.addEventListener("click", (e) => {
+    const p = pickCell(cnvMlp, cells.mlp, e);
+    if (p) { UI.mlpCur = p.i; UI.dirty = true; }
+  });
+  cnvMlp.addEventListener("keydown", (e) => {
+    let used = true;
+    if (e.key === "ArrowLeft") UI.mlpCur = Math.max(0, UI.mlpCur - 1);
+    else if (e.key === "ArrowRight") UI.mlpCur = Math.min(127, UI.mlpCur + 1);
+    else if (e.key === "ArrowUp") UI.mlpCur = Math.max(0, UI.mlpCur - 16);
+    else if (e.key === "ArrowDown") UI.mlpCur = Math.min(127, UI.mlpCur + 16);
+    else used = false;
+    if (used) { e.preventDefault(); UI.dirty = true; }
+  });
+
+  const cnvOut = el("cnvOut");
+  cnvOut.addEventListener("mousemove", (e) => {
+    const p = pickCell(cnvOut, cells.out, e);
+    if (p) {
+      UI.outHover = p.i;
+      const sv = curStep();
+      showTip(e, '<span class="k">' + tokLabel(p.i) + '</span><br>logit=' + decStr(sv.B.logits[p.i]) +
+        '<br>×2=' + decStr(sv.B.logits_scaled[p.i]) + '<br>prob=' + decStr(sv.B.probs[p.i]));
+    } else { UI.outHover = null; hideTip(); }
+    UI.dirty = true;
+  });
+  cnvOut.addEventListener("mouseleave", () => { UI.outHover = null; hideTip(); UI.dirty = true; });
+  cnvOut.addEventListener("click", (e) => {
+    const p = pickCell(cnvOut, cells.out, e);
+    if (p) { UI.outCur = p.i; UI.dirty = true; }
+  });
+  cnvOut.addEventListener("keydown", (e) => {
+    let used = true;
+    if (e.key === "ArrowUp") UI.outCur = Math.max(0, (UI.outCur == null ? 0 : UI.outCur) - 1);
+    else if (e.key === "ArrowDown") UI.outCur = Math.min(26, (UI.outCur == null ? 0 : UI.outCur) + 1);
+    else used = false;
+    if (used) { e.preventDefault(); UI.dirty = true; }
+  });
+
+  const cnvRoul = el("cnvRoul");
+  function roulTip(e, i) {
+    const sv = curStep();
+    const lo = i === 0 ? 0n : sv.B.cum[i - 1];
+    showTip(e, '<span class="k">segment</span> ' + tokLabel(i) +
+      '<br>prob=' + decStr(sv.B.probs[i]) +
+      '<br>cum ∈ [' + decStr(lo) + ', ' + decStr(sv.B.cum[i]) + ')' +
+      '<br><span class="k">chosen iff first with r &lt; cum</span>');
+  }
+  cnvRoul.addEventListener("mousemove", (e) => {
+    const p = pickCell(cnvRoul, cells.roul, e);
+    if (p) { UI.roulHover = p.i; roulTip(e, p.i); }
+    else { UI.roulHover = null; hideTip(); }
+    UI.dirty = true;
+  });
+  cnvRoul.addEventListener("mouseleave", () => { UI.roulHover = null; hideTip(); UI.dirty = true; });
+  cnvRoul.addEventListener("keydown", (e) => {
+    let used = true;
+    if (e.key === "ArrowLeft") UI.roulCur = Math.max(0, (UI.roulCur == null ? curStep().st.chosen : UI.roulCur) - 1);
+    else if (e.key === "ArrowRight") UI.roulCur = Math.min(26, (UI.roulCur == null ? curStep().st.chosen : UI.roulCur) + 1);
+    else used = false;
+    if (used) { e.preventDefault(); UI.dirty = true; }
+  });
+
+  /* ---- MLP toggle ---- */
+  function setMlpMode(post) {
+    UI.mlpPost = post;
+    el("btnPre").setAttribute("aria-pressed", String(!post));
+    el("btnPost").setAttribute("aria-pressed", String(post));
+    el("btnPre").classList.toggle("on", !post);
+    el("btnPost").classList.toggle("on", post);
+    UI.dirty = true;
+  }
+  el("btnPre").addEventListener("click", () => setMlpMode(false));
+  el("btnPost").addEventListener("click", () => setMlpMode(true));
+
+  /* ---- help overlay (focus moves into the dialog and back) ---- */
+  const help = el("help");
+  let helpReturnFocus = null;
+  function toggleHelp(force) {
+    const open = force != null ? force : !help.classList.contains("open");
+    if (open === help.classList.contains("open")) return;
+    help.classList.toggle("open", open);
+    if (open) {
+      helpReturnFocus = document.activeElement;
+      el("helpBox").focus();
+    } else if (helpReturnFocus && helpReturnFocus.focus) {
+      helpReturnFocus.focus();
+      helpReturnFocus = null;
+    }
+  }
+  el("helpBtn").addEventListener("click", () => toggleHelp());
+  el("helpClose").addEventListener("click", () => toggleHelp(false));
+  help.addEventListener("click", (e) => { if (e.target === help) toggleHelp(false); });
+
+  /* ---- global keyboard ---- */
+  document.addEventListener("keydown", (e) => {
+    if (e.defaultPrevented) return;
+    const tag = e.target && e.target.tagName;
+    if (e.key === "?") { toggleHelp(); e.preventDefault(); return; }
+    if (e.key === "Escape") { toggleHelp(false); return; }
+    if (help.classList.contains("open")) return;
+    if (e.key === "[") { selectSample(UI.si - 1); e.preventDefault(); return; }
+    if (e.key === "]") { selectSample(UI.si + 1); e.preventDefault(); return; }
+    if (e.key === "r" || e.key === "R") { setMlpMode(!UI.mlpPost); return; }
+    if (tag === "CANVAS") {         /* grid cursors own the arrows there */
+      if (e.key === " ") { togglePlay(); e.preventDefault(); }
+      return;
+    }
+    if (tag === "BUTTON" && e.key === " ") return; /* let buttons click natively */
+    if (e.key === "ArrowLeft") { selectStep(UI.pi - 1); e.preventDefault(); }
+    else if (e.key === "ArrowRight") { selectStep(UI.pi + 1); e.preventDefault(); }
+    else if (e.key === " ") { togglePlay(); e.preventDefault(); }
+  });
+
+  /* ---- footer ---- */
+  el("footTrace").textContent = "traced against the original C runtime: " + V.steps_compared +
+    " steps, " + (V.logit_mismatches + V.kv_mismatches + V.sample_mismatches) +
+    " mismatches; final RNG state re-verified (" + V.rng_final_pristine + ").";
+  el("footSha").textContent = "model.mgw sha256 " + SUMMARY.model_sha256 +
+    " · " + SUMMARY.num_params + " Q16.48 weights · vocab \"" + TRACE.meta.uchars + "\" + ⌀";
+
+  /* ---- render loop (dirty-flag; autoplay 1 step/s via RAF clock) ------- */
+  function render() {
+    renderResidual();
+    renderAttn();
+    renderMlp();
+    renderOutput();
+    renderRoulette();
+    renderVerify();
+  }
+  function frame(ts) {
+    if (UI.playing) {
+      if (UI.playLast == null) UI.playLast = ts;
+      if (ts - UI.playLast >= 1000) {
+        UI.playLast = ts;
+        if (UI.pi < stepCount() - 1) { UI.pi++; refreshTimelineSel(); UI.dirty = true; }
+        else {  /* last step: continue into the next sample (wraps at the end) */
+          selectSample((UI.si + 1) % TRACE.samples.length);
+          UI.playing = true;
+          refreshTimelineSel();
+        }
+      }
+    }
+    if (UI.dirty) { UI.dirty = false; render(); }
+    window.requestAnimationFrame(frame);
+  }
+  window.addEventListener("resize", () => { UI.dirty = true; });
+
+  buildSampleStrip();
+  buildHeadGrid();
+  buildTimeline();
+  refreshTimelineSel();
+  window.requestAnimationFrame(frame);
+}
+
+if (IS_BROWSER) init(); else nodeSelfTest();
+</script>
+</body>
+</html>

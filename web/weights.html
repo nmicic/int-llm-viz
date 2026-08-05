@@ -1,0 +1,1975 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weight explorer — int-llm Q16.48</title>
+<!--
+  int-llm-viz / weights.html — "Weight explorer"
+  Copyright 2026 Nenad Mićić
+  SPDX-License-Identifier: Apache-2.0
+
+  Self-contained offline page. Every stored matrix of the committed
+  checkpoint drawn as a 3-D point cloud and as a heatmap, plus the byte
+  layout of the checkpoint file itself. A second quantity mode shows the
+  exact local product fp_mul(weight[row,col], input[col]) against a
+  recorded input vector from the C-harness trace; each row of those
+  products is re-summed in this page and asserted equal to the recorded
+  output vector, in exact BigInt arithmetic. Floating point is used only
+  for display geometry (projections, heights, colors); those code sites
+  are marked "display-only".
+-->
+<style>
+__THEME_CSS__
+
+/* ---------------- page-specific ---------------- */
+.badgerow { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ctlrow { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.ctlrow .grp { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ctlrow label, .ctlrow .grplbl { font: 11px var(--mono); color: var(--dim); }
+#ctxNote { font: 11px/1.7 var(--mono); color: var(--dim); margin-top: 8px; overflow-wrap: break-word; }
+#ctxNote b { color: var(--ink); font-weight: 600; }
+canvas#stage { display: block; width: 100%; height: 540px; touch-action: none; cursor: grab; }
+.mode4d canvas#stage { height: 640px; }
+canvas#stage:active { cursor: grabbing; }
+canvas#stage:focus-visible, canvas#heat:focus-visible, canvas#filemap:focus-visible {
+  outline: 2px solid var(--gold); outline-offset: 2px; }
+canvas#heat { display: block; }
+.heatwrap { overflow-x: auto; }
+.axiscap { font: 11px var(--mono); color: var(--dim); margin: 2px 0 6px; }
+.inspect { font: 11px/1.65 var(--mono); color: var(--ink); background: var(--panel2);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; margin-top: 8px;
+  min-height: 46px; overflow-wrap: break-word; }
+.inspect .k { color: var(--dim); }
+canvas#filemap { display: block; width: 100%; height: 92px; }
+.swline { display: inline-flex; align-items: center; gap: 5px; margin-right: 12px; }
+.smallnote { font-size: 11px; color: var(--dim); max-width: none; }
+footer .mono { overflow-wrap: break-word; }
+.helpkeys td { padding: 2px 10px 2px 0; vertical-align: top; }
+.helpkeys { border-collapse: collapse; }
+.tourbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  font: 12px/1.6 var(--mono); color: var(--ink); background: var(--panel2);
+  border: 1px solid var(--gold); border-radius: 8px; padding: 6px 10px; margin: 0 0 8px; }
+.tourbar[hidden] { display: none; }  /* display:flex must not defeat hidden */
+.tourbar .cap { flex: 1 1 24ch; }
+.tourbar .k { color: var(--dim); white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+<!--UNBUILT-NOTICE--><div style="background:#3a1420;border:1px solid #7a2b3b;color:#ffd6d6;font:14px/1.6 ui-monospace,Menlo,Consolas,monospace;padding:12px 16px;border-radius:10px;margin:12px 0;max-width:72ch">
+You are looking at the <b>unbuilt source template</b> (web/weights.html).
+Its data placeholders are not filled in, so no checkpoint, styling, or
+visualization can appear here. Open the built page
+<a href="../site/weights.html" style="color:#ffd166">site/weights.html</a>
+instead &mdash; it is committed; <b>make</b> regenerates it.
+</div><!--/UNBUILT-NOTICE-->
+  <nav class="topnav" aria-label="site">
+    <a href="index.html">index</a>
+    <a href="atlas.html">atlas</a>
+    <a href="trace.html">trace</a>
+    <a href="space.html">space</a>
+    <a class="here" href="weights.html" aria-current="page">weights</a>
+    <span class="badgerow">
+      <span class="badge" id="selfBadge">self-check: running&#8230;</span>
+      <button id="helpBtn" aria-label="toggle help overlay" title="help (?)">?</button>
+    </span>
+  </nav>
+
+  <h1>Weight explorer <span class="plain">&mdash; every stored matrix as a cloud, a heatmap, and bytes on disk</span></h1>
+  <p class="sub">Each learned tensor of the Q16.48 checkpoint, drawn cell by cell.
+    Quantity <b>stored weight</b> is the committed integer itself; quantity
+    <b>exact contribution</b> is fp_mul(w[row,col], input[col]) against a recorded
+    input vector from the C-harness trace &mdash; a local product, not attribution.
+    Press <kbd>?</kbd> for keys and the exactness contract.</p>
+
+  <section class="card" id="controlsCard">
+    <div class="ctlrow">
+      <span class="grp">
+        <label for="tensorSel">tensor</label>
+        <select id="tensorSel" aria-label="tensor to display"></select>
+      </span>
+      <span class="grp" role="group" aria-label="view">
+        <span class="grplbl">view</span>
+        <button id="btnCloud" aria-pressed="true">3-D cloud</button>
+        <button id="btnHeat" aria-pressed="false">heatmap</button>
+        <button id="btn4D" aria-pressed="false">4-D shadows</button>
+      </span>
+      <span class="grp" role="group" aria-label="quantity">
+        <span class="grplbl">quantity</span>
+        <button id="btnWeight" aria-pressed="true">stored weight</button>
+        <button id="btnContrib" aria-pressed="false">exact contribution</button>
+      </span>
+      <span class="grp">
+        <label for="sampleSel">sample</label>
+        <select id="sampleSel" aria-label="trace sample for contribution mode"></select>
+        <label for="stepSel">step</label>
+        <select id="stepSel" aria-label="trace step for contribution mode"></select>
+      </span>
+      <span class="grp">
+        <button id="btnReset" title="reset the camera (R)">reset view</button>
+        <button id="btnRot" aria-pressed="false"
+          title="gently orbit the camera, one revolution per 48 s; grabbing the camera pauses it (P)">auto-rotate</button>
+        <button id="btnStepPlay" aria-pressed="false"
+          title="walk every (sample, step) pair at one per second, wrapping at the end">&#9656; auto-step</button>
+        <button id="btnTour" aria-pressed="false"
+          title="presentation mode: captioned scenes, advanced by hand (T)">tour</button>
+      </span>
+    </div>
+    <div id="ctxNote"></div>
+  </section>
+
+  <section class="card" id="stageCard">
+    <h2 id="stageTitle" style="margin-top:0"></h2>
+    <div id="tourBar" class="tourbar" hidden>
+      <span class="k" id="tourPos"></span>
+      <span class="cap" id="tourCap"></span>
+      <button id="tourPrev" title="previous scene (B)">&#9664; back</button>
+      <button id="tourNext" title="next scene (N)">next &#9654;</button>
+      <button id="tourExit" title="leave the tour (T)">exit</button>
+    </div>
+    <div id="cloudWrap">
+      <canvas id="stage" tabindex="0"
+        aria-label="3-D weight cloud, or four camera-linked 4-D shadow panels; drag or arrow keys orbit (all panels together), wheel or plus and minus zoom, R resets"></canvas>
+    </div>
+    <div id="heatWrap" class="heatwrap" hidden>
+      <div class="axiscap" id="heatCap"></div>
+      <canvas id="heat" tabindex="0"
+        aria-label="weight heatmap; arrow keys move the cell cursor"></canvas>
+    </div>
+    <div class="legend" id="stageLegend"></div>
+    <div class="inspect" id="insStage">hover a cell &mdash; every readout is the exact integer.</div>
+  </section>
+
+  <section class="card" id="fileCard">
+    <h2 style="margin-top:0">checkpoint bytes <span class="smallnote">&mdash; the committed model.mgw, span by span</span></h2>
+    <p class="smallnote">64-byte header, 64-byte config, 96-byte index entries, then packed
+      int64 tensor data. Spans are drawn to byte scale; the selected tensor is outlined gold.
+      Hover for exact offsets; click a learned span to select that tensor above.</p>
+    <canvas id="filemap" tabindex="0"
+      aria-label="byte layout of the checkpoint file; hover or click a span"></canvas>
+    <div class="inspect" id="insFile">hover a span&#8230;</div>
+  </section>
+
+<div class="help-overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-label="help">
+  <div class="help-box" id="helpBox" tabindex="-1">
+    <h2>weights &mdash; help</h2>
+    <p>Every learned matrix of the committed checkpoint, one mark per stored
+    cell. The <b>3-D cloud</b> spreads a matrix flat: x = column, z = row,
+    height and color = the selected quantity. The <b>heatmap</b> shows the
+    same cells as a flat grid. The <b>4-D shadows</b> view projects the full
+    per-cell 4-tuple four ways at once. The <b>checkpoint bytes</b> strip
+    below is the actual file: header, config, index, and each tensor&#8217;s
+    span at byte scale.</p>
+
+    <h3>quantity</h3>
+    <p><b>stored weight</b> &mdash; the committed Q16.48 integer itself; no sample,
+    no step, no derivation.<br>
+    <b>exact contribution</b> &mdash; fp_mul(w[row,col], input[col]): the exact
+    local Q16.48 product of one stored weight with one recorded input
+    coordinate at the chosen trace sample and step. It is <b>not</b>
+    attribution, <b>not</b> a gradient, and <b>not</b> the neuron&#8217;s total
+    output &mdash; those would need more than one number. What makes it honest:
+    each row&#8217;s products are re-summed here, in exact BigInt arithmetic,
+    and asserted equal to the recorded output vector of the C oracle
+    &mdash; on load for the default step, and again on every step you select.<br>
+    <b>wte / wpe</b> are lookup tables: a row is <i>selected</i>, never
+    multiplied, so no input vector exists and contribution mode is disabled.</p>
+
+    <h3>4-D shadows</h3>
+    <p>With a sample and step chosen, every cell of a multiplied matrix is a
+    4-tuple: (<b>column</b>, <b>row</b>, <b>stored weight</b>, <b>exact
+    contribution</b>). Four dimensions do not fit one screen, so the view
+    draws four 3-D projections &mdash; each panel <i>drops one coordinate</i>
+    and its caption names the drop. All four panels share <b>one camera</b>:
+    drag, wheel, or arrow keys turn them together, because they are four
+    shadows of the same object, never four objects. Hovering a mark rings
+    that same cell in all four panels. Marks are colored by each
+    panel&#8217;s own height axis (weight or contribution, as captioned).
+    Index axes are spread over the panel; value axes are scaled by that
+    quantity&#8217;s own exact max |value| (display float; readouts exact).
+    Undefined for wte/wpe: a lookup row has no input, so no contribution
+    coordinate exists.</p>
+
+    <h3>which input feeds which matrix</h3>
+    <table>
+      <tr><td class="mono">wq, wk, wv</td><td>xn_attn (attention-side RMSNorm output)</td></tr>
+      <tr><td class="mono">wo</td><td>ao (concatenated head mixes, before Wo); row sums + x0 = x_mid</td></tr>
+      <tr><td class="mono">fc1</td><td>xn_mlp (MLP-side RMSNorm output)</td></tr>
+      <tr><td class="mono">fc2</td><td>ReLU(h_pre); row sums + x_mid = x_out</td></tr>
+      <tr><td class="mono">lm_head</td><td>x_out (final residual); row sums = logits</td></tr>
+    </table>
+
+    <h3>encodings</h3>
+    <table>
+      <tr><td class="mono">#4dabf7 &#8594; #ffa94d</td><td>diverging ramp: blue negative, warm positive, panel-dark zero &mdash; symmetric about zero (display float; readouts exact). Heat is linear in value; the cloud and 4-D shadows use saturated poles (#339aff / #ffd43b) with a &radic;|value| curve so faint points stay visible.</td></tr>
+      <tr><td class="mono">height</td><td>cloud only: same quantity as color, scaled by the tensor&#8217;s max |value| (display float)</td></tr>
+      <tr><td class="mono">dashed outline</td><td>cloud: the zero plane &mdash; marks above are positive, below negative</td></tr>
+      <tr><td class="mono">gold ring / cell</td><td>hovered or keyboard-focused cell, exact readout below</td></tr>
+      <tr><td class="mono">mark size / brightness</td><td>3-D depth (nearer = larger, brighter) &mdash; display geometry</td></tr>
+    </table>
+
+    <h3>scene links, motion, tour</h3>
+    <p>The address bar always carries the current scene:
+    <span class="mono">?tensor=&#8230;&amp;view=&#8230;&amp;sample=&#8230;&amp;step=&#8230;&amp;yaw=&#8230;&amp;pitch=&#8230;&amp;zoom=&#8230;</span>.
+    Copy the URL and the same page state &mdash; tensor, view, quantity,
+    sample, step and camera pose &mdash; is restored exactly on load, so
+    identical links render identical frames. <b>auto-rotate</b> orbits the
+    cloud or 4-D camera gently (one revolution per 48&nbsp;s); any drag,
+    wheel or key on the stage pauses it, the button (or <kbd>P</kbd>)
+    resumes it, and it never starts by itself when your system asks for
+    reduced motion. The heatmap and the byte strip are never animated.
+    <b>auto-step</b> walks every (sample, step) pair at one per second,
+    wrapping at the end &mdash; combine it with auto-rotate for a moving
+    view of the contribution sequence; it never starts by itself.
+    <b>tour</b> steps through captioned preset scenes by hand
+    (<kbd>N</kbd>/<kbd>B</kbd>) &mdash; nothing advances on a timer. For
+    scripted capture the page exposes
+    <span class="mono">window.VIZ</span>: <span class="mono">ready</span>,
+    <span class="mono">getScene()</span>, <span class="mono">setScene(s)</span>,
+    <span class="mono">sceneURL()</span> and
+    <span class="mono">renderAt(ms)</span> &mdash; the last draws the frame a
+    paused scene would show after <i>ms</i> of rotation, synchronously and as
+    a pure function of (scene, ms), so frame N of any capture is
+    reproducible.</p>
+
+    <h3>exactness contract</h3>
+    <p class="note">Exact (BigInt, never floats): stored weights, recorded
+    trace vectors, every fp_mul product, every row-sum identity, all hex and
+    decimal readouts, the FNV-1a-64 tensor hashes checked against the C
+    harness&#8217;s record, and the byte offsets in the file strip. Display-only
+    floats (labeled in place): screen projections, heights, colors, mark
+    sizes. The startup self-check re-parses the embedded checkpoint,
+    re-hashes all 9 tensors, and re-multiplies every applicable matrix row
+    against recorded inputs at two trace steps.</p>
+
+    <h3>keyboard</h3>
+    <table class="helpkeys">
+      <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>view: 3-D cloud / heatmap / 4-D shadows</td></tr>
+      <tr><td><kbd>W</kbd> <kbd>C</kbd></td><td>quantity: stored weight / exact contribution (3-D and heatmap; the 4-D view always shows both)</td></tr>
+      <tr><td><kbd>&#8592;&#8593;&#8594;&#8595;</kbd></td><td>cloud or 4-D focused: orbit (4-D: all four panels together) &middot; heatmap focused: move the cell cursor</td></tr>
+      <tr><td><kbd>+</kbd> <kbd>&#8722;</kbd></td><td>zoom the cloud / the shared 4-D camera</td></tr>
+      <tr><td><kbd>R</kbd></td><td>reset the camera</td></tr>
+      <tr><td><kbd>P</kbd></td><td>play / pause the gentle auto-rotation (cloud and 4-D only)</td></tr>
+      <tr><td><kbd>T</kbd></td><td>enter / leave the captioned tour</td></tr>
+      <tr><td><kbd>N</kbd> <kbd>B</kbd></td><td>tour: next / back (manual &mdash; scenes never auto-advance)</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>close this overlay (or leave the tour)</td></tr>
+      <tr><td><kbd>?</kbd></td><td>toggle this overlay</td></tr>
+    </table>
+    <p><button id="helpClose">close (Esc)</button></p>
+  </div>
+</div>
+
+<div class="tip" id="tip" aria-hidden="true"></div>
+
+<footer>
+  <div class="mono">model sha256 <span id="footSha"></span></div>
+  <div>weights and contributions are exact integers; projections, heights and
+  colors are labeled display geometry (see self-check badge).</div>
+  <div>Copyright 2026 Nenad Mi&#263;i&#263; &mdash; Apache-2.0. Model checkpoint:
+  third_party/int-llm (Apache-2.0). Self-contained page: no network use.</div>
+</footer>
+</main>
+<script>
+__MGW_JS__
+</script>
+<script>
+"use strict";
+/* ================= embedded data (build_site.py tokens) ================= */
+const MGW_B64 = "__MGW_B64__";
+const TRACE = __TRACE_JSON__;
+const SUMMARY = __SUMMARY_JSON__;
+
+const IS_BROWSER = typeof document !== "undefined";
+
+/* ============================ pure layer ============================
+ * Everything above init() runs identically under Node (tools/page_check.js)
+ * and in the browser. No DOM, no timers, no randomness, no clock. */
+
+const FP1 = 281474976710656n;              /* FP_ONE = 2^48 */
+const NE = 32, MD = 128, VOC = 27, NH = 4, HD = 8, BLOCK = 8;
+
+/* fp_mul from fp_math.h, bit-for-bit: (int128)a*b >> 48 arithmetic shift,
+ * cast to int64. BigInt >> is an arithmetic shift; asIntN mirrors the cast. */
+function fpMul(a, b) { return BigInt.asIntN(64, (a * b) >> 48n); }
+
+/* One entry per learned tensor. input === null marks a lookup table (a row
+ * is selected by token/position id, never multiplied by a vector), so
+ * contribution mode is undefined there. For the rest, input names the
+ * recorded trace field feeding the matrix (relu: applied first, exactly as
+ * microgpt_int.c does), out names the recorded product vector, and res the
+ * recorded residual that C adds before storing out (null = stored as-is). */
+const TENSOR_DEFS = [
+  { key: "wte", mgw: "wte", rows: VOC, cols: NE,
+    label: "wte — token embedding 27×32",
+    rowAxis: "token", colAxis: "residual dim",
+    rowKind: "tok", colKind: "res",
+    role: "lookup: row = token id, added into the stream",
+    input: null },
+  { key: "wpe", mgw: "wpe", rows: BLOCK, cols: NE,
+    label: "wpe — position embedding 8×32",
+    rowAxis: "position", colAxis: "residual dim",
+    rowKind: "pos", colKind: "res",
+    role: "lookup: row = position, added into the stream",
+    input: null },
+  { key: "lm_head", mgw: "lm_head", rows: VOC, cols: NE,
+    label: "lm_head — unembedding 27×32",
+    rowAxis: "token (logit row)", colAxis: "residual dim",
+    rowKind: "tok", colKind: "res",
+    role: "row r dotted with x_out gives logit r",
+    input: { field: "x_out", relu: false, out: "logits", res: null,
+             inLabel: "x_out (final residual)" } },
+  { key: "attn_wq", mgw: "layers.0.attn_wq", rows: NE, cols: NE,
+    label: "wq — attention query 32×32",
+    rowAxis: "q dim (4 heads × 8)", colAxis: "residual dim",
+    rowKind: "head", colKind: "res", headPrefix: "q",
+    role: "q = wq · xn_attn",
+    input: { field: "xn_attn", relu: false, out: "q", res: null,
+             inLabel: "xn_attn (attention RMSNorm output)" } },
+  { key: "attn_wk", mgw: "layers.0.attn_wk", rows: NE, cols: NE,
+    label: "wk — attention key 32×32",
+    rowAxis: "k dim (4 heads × 8)", colAxis: "residual dim",
+    rowKind: "head", colKind: "res", headPrefix: "k",
+    role: "k = wk · xn_attn",
+    input: { field: "xn_attn", relu: false, out: "k", res: null,
+             inLabel: "xn_attn (attention RMSNorm output)" } },
+  { key: "attn_wv", mgw: "layers.0.attn_wv", rows: NE, cols: NE,
+    label: "wv — attention value 32×32",
+    rowAxis: "v dim (4 heads × 8)", colAxis: "residual dim",
+    rowKind: "head", colKind: "res", headPrefix: "v",
+    role: "v = wv · xn_attn",
+    input: { field: "xn_attn", relu: false, out: "v", res: null,
+             inLabel: "xn_attn (attention RMSNorm output)" } },
+  { key: "attn_wo", mgw: "layers.0.attn_wo", rows: NE, cols: NE,
+    label: "wo — attention output 32×32",
+    rowAxis: "residual dim", colAxis: "attn-mix dim (4 heads × 8)",
+    rowKind: "res", colKind: "head", headPrefix: "mix",
+    role: "x_mid = wo · ao + x0",
+    input: { field: "ao", relu: false, out: "x_mid", res: "x0",
+             inLabel: "ao (concatenated head mixes, before Wo)" } },
+  { key: "mlp_fc1", mgw: "layers.0.mlp_fc1", rows: MD, cols: NE,
+    label: "fc1 — MLP expand 128×32",
+    rowAxis: "hidden unit", colAxis: "residual dim",
+    rowKind: "hid", colKind: "res",
+    role: "h_pre = fc1 · xn_mlp",
+    input: { field: "xn_mlp", relu: false, out: "h_pre", res: null,
+             inLabel: "xn_mlp (MLP RMSNorm output)" } },
+  { key: "mlp_fc2", mgw: "layers.0.mlp_fc2", rows: NE, cols: MD,
+    label: "fc2 — MLP contract 32×128",
+    rowAxis: "residual dim", colAxis: "hidden unit (ReLU h)",
+    rowKind: "res", colKind: "hid",
+    role: "x_out = fc2 · ReLU(h_pre) + x_mid",
+    input: { field: "h_pre", relu: true, out: "x_out", res: "x_mid",
+             inLabel: "ReLU(h_pre) (post-activation hidden vector)" } },
+];
+const DEF_BY_KEY = new Map(TENSOR_DEFS.map((d) => [d.key, d]));
+
+const DEFAULT_TENSOR = "mlp_fc1";
+const DEFAULT_SAMPLE = 0, DEFAULT_STEP = 3;
+
+function buildModel() {
+  const parsed = parseMGW(b64ToBytes(MGW_B64));
+  const raw = new Map();
+  for (const def of TENSOR_DEFS) raw.set(def.key, parsed.byName.get(def.mgw));
+  return { parsed, raw, uchars: parsed.uchars };
+}
+
+function tokLabel(i, uchars) {
+  return i === VOC - 1 ? "⌀ (BOS, " + i + ")" : "'" + uchars[i] + "' (" + i + ")";
+}
+function axisLabel(kind, i, def, uchars) {
+  if (kind === "tok") return "token " + tokLabel(i, uchars);
+  if (kind === "pos") return "position p" + i;
+  if (kind === "hid") return "hidden unit " + i;
+  if (kind === "head")
+    return def.headPrefix + " dim " + i + " (head " + (i >> 3) + ", lane " + (i & 7) + ")";
+  return "residual dim " + i;
+}
+
+/* Recorded trace vectors arrive as decimal strings; convert exactly. */
+function stepVec(step, field) { return step[field].map((s) => BigInt(s)); }
+
+function inputVector(def, step) {
+  if (!def.input) return null;
+  const v = stepVec(step, def.input.field);
+  if (def.input.relu)
+    for (let i = 0; i < v.length; i++) if (v[i] < 0n) v[i] = 0n;
+  return v;
+}
+
+/* All rows*cols exact local products for one (tensor, step). */
+function contributions(def, tensor, step) {
+  const invec = inputVector(def, step);
+  const n = def.rows * def.cols, out = new Array(n);
+  for (let r = 0; r < def.rows; r++)
+    for (let c = 0; c < def.cols; c++)
+      out[r * def.cols + c] = fpMul(tensor.raw[r * def.cols + c], invec[c]);
+  return out;
+}
+
+/* The identity that makes "contribution" honest: summing row r of the
+ * products (plus the recorded residual, where C adds one) must reproduce
+ * the recorded output vector exactly. Mirrors linearFwd(): per-row plain
+ * BigInt sum, one asIntN(64) cast, then the residual add's cast. */
+function rowIdentity(def, tensor, step, contrib) {
+  const outRec = stepVec(step, def.input.out);
+  const resRec = def.input.res ? stepVec(step, def.input.res) : null;
+  const bad = [];
+  for (let r = 0; r < def.rows; r++) {
+    let s = 0n;
+    const base = r * def.cols;
+    for (let c = 0; c < def.cols; c++) s += contrib[base + c];
+    s = BigInt.asIntN(64, s);
+    if (resRec) s = BigInt.asIntN(64, s + resRec[r]);
+    if (s !== outRec[r]) bad.push(r);
+  }
+  return bad;
+}
+
+/* Exact max |value| over a BigInt array (display scaling divides by it). */
+function maxAbsBig(arr) {
+  let m = 0n;
+  for (let i = 0; i < arr.length; i++) {
+    const a = arr[i] < 0n ? -arr[i] : arr[i];
+    if (a > m) m = a;
+  }
+  return m;
+}
+
+/* Byte spans of the checkpoint file, from the parsed index (exact). */
+function fileSpans(parsed) {
+  const spans = [
+    { kind: "header", name: "header", start: 0, end: 64 },
+    { kind: "config", name: "config", start: 64, end: 128 },
+    { kind: "index", name: "index (" + parsed.tensors.length + " × 96 B)",
+      start: 128, end: 128 + parsed.tensors.length * 96 },
+  ];
+  const ts = parsed.tensors.slice()
+    .sort((a, b) => a.dataOffset - b.dataOffset);
+  for (const t of ts)
+    spans.push({ kind: "tensor", name: t.name, tensor: t,
+                 start: t.dataOffset, end: t.dataOffset + t.numElements * 8 });
+  return spans;
+}
+
+/* -------- 3-D camera (same projection as the space page; display) ------- */
+const PERSP = 3.4;
+function project3(x, y, z, yaw, pitch, zoom) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const x1 = cy * x + sy * z;
+  const z1 = -sy * x + cy * z;
+  const y2 = cp * y - sp * z1;
+  const z2 = sp * y + cp * z1;
+  const f = PERSP / (PERSP - z2);
+  return { x: x1 * f * zoom, y: -y2 * f * zoom, depth: z2, f };
+}
+
+/* -------------------- 4-D shadows (four 3-D panels) -------------------- */
+/* With a step chosen, each cell of a multiplied matrix is the 4-tuple
+ * (col, row, weight, contribution). Each panel keeps three of the four as
+ * its (x, y, z) axes and drops the one it names; together the four drops
+ * cover all four coordinates. pick() maps a normalized tuple to panel
+ * axes. Order: reading feels natural if the two "familiar" shadows (the
+ * weight cloud and the contribution cloud) sit on top. */
+const PANELS4D = [
+  { x: "col", y: "weight",       z: "row",          drops: "contribution",
+    pick: (t) => [t.cN, t.wN, t.rN] },
+  { x: "col", y: "contribution", z: "row",          drops: "weight",
+    pick: (t) => [t.cN, t.pN, t.rN] },
+  { x: "row", y: "weight",       z: "contribution", drops: "col",
+    pick: (t) => [t.rN, t.wN, t.pN] },
+  { x: "col", y: "weight",       z: "contribution", drops: "row",
+    pick: (t) => [t.cN, t.wN, t.pN] },
+];
+
+/* Display-normalized 4-tuples for every cell of (tensor, step): index axes
+ * spread over [-1, 1]; each value axis divided by its own exact max
+ * |value| (weight by wMax, contribution by pMax). The exact BigInt maxima
+ * and the raw contribution grid ride along for readouts and identity
+ * checks; the normalized floats are display geometry only. */
+function tuples4D(def, tensor, step) {
+  const contrib = contributions(def, tensor, step);
+  const wMax = maxAbsBig(tensor.raw), pMax = maxAbsBig(contrib);
+  const wMaxN = wMax > 0n ? Q48.toNumber(wMax) : 1;
+  const pMaxN = pMax > 0n ? Q48.toNumber(pMax) : 1;
+  const rows = def.rows, cols = def.cols;
+  const tuples = new Array(rows * cols);
+  for (let r = 0; r < rows; r++) {
+    const rN = rows === 1 ? 0 : (r / (rows - 1)) * 2 - 1;
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      tuples[i] = {
+        r, c,
+        cN: cols === 1 ? 0 : (c / (cols - 1)) * 2 - 1,
+        rN,
+        wN: Q48.toNumber(tensor.raw[i]) / wMaxN,
+        pN: Q48.toNumber(contrib[i]) / pMaxN,
+      };
+    }
+  }
+  return { tuples, wMax, pMax, contrib };
+}
+
+/* ---------------- deterministic scene state (URL codec) ---------------- */
+/* A scene is the whole page state: tensor, view, quantity, sample, step,
+ * camera pose, and whether the gentle auto-rotation is playing. The codec
+ * is pure string <-> object (hand-rolled: the Node self-check sandbox has
+ * no URLSearchParams), so identical URLs restore identical scenes. Camera
+ * numbers are display floats; sanitizeScene rounds them to 1e-4 so that
+ * sanitize -> serialize -> parse -> sanitize is a fixed point. */
+const VIEWS = ["cloud", "heat", "4d"];
+const QUANTITIES = ["weight", "contrib"];
+const DEFAULT_VIEW = { yaw: 0.62, pitch: -0.38, zoom: 1 };
+/* Camera limits: one source for the orbit controls and the URL codec. */
+const CAM = { pitchLim: 1.55, zoomLo: 0.4, zoomHi: 3.4 };
+const SCENE_DEFAULT = {
+  tensor: DEFAULT_TENSOR, view: "cloud", quantity: "weight",
+  sample: DEFAULT_SAMPLE, step: DEFAULT_STEP,
+  yaw: DEFAULT_VIEW.yaw, pitch: DEFAULT_VIEW.pitch, zoom: DEFAULT_VIEW.zoom,
+  rot: true,
+};
+
+function intIn(v, lo, hi, dflt) {
+  const n = typeof v === "number" ? v : parseInt(v, 10);
+  if (!Number.isInteger(n)) return dflt;
+  return Math.max(lo, Math.min(hi, n));
+}
+function numOr(v, dflt) {
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : dflt;
+}
+/* Wrap into (-pi, pi], round to 1e-4, and clamp so the rounding cannot
+ * escape the wrap branch: the result is its own fixed point. */
+function wrapYaw(y) {
+  const TAU = Math.PI * 2;
+  let w = ((y % TAU) + TAU) % TAU;
+  if (w > Math.PI) w -= TAU;
+  w = Math.round(w * 10000) / 10000;
+  return Math.max(-3.1415, Math.min(3.1415, w));
+}
+function round4(v) { return Math.round(v * 10000) / 10000; }
+
+/* Any partial/raw object (e.g. parseScene output) -> one complete valid
+ * scene. Encodes the page's own coercion rules: a lookup tensor has no
+ * input vector, so 4-D and contribution fall back; the heatmap is never
+ * animated, so rot is forced off there. */
+function sanitizeScene(raw) {
+  const s = Object.assign({}, SCENE_DEFAULT, raw || {});
+  const def = DEF_BY_KEY.has(s.tensor)
+    ? DEF_BY_KEY.get(s.tensor) : DEF_BY_KEY.get(DEFAULT_TENSOR);
+  const view = VIEWS.includes(s.view) ? s.view : SCENE_DEFAULT.view;
+  const quantity = QUANTITIES.includes(s.quantity)
+    ? s.quantity : SCENE_DEFAULT.quantity;
+  const sample = intIn(s.sample, 0, TRACE.samples.length - 1, DEFAULT_SAMPLE);
+  const rotWanted = s.rot === true || s.rot === 1 || s.rot === "1";
+  const out = {
+    tensor: def.key,
+    view: def.input ? view : (view === "4d" ? "cloud" : view),
+    quantity: def.input ? quantity : "weight",
+    sample,
+    step: intIn(s.step, 0, TRACE.samples[sample].steps.length - 1,
+                DEFAULT_STEP),
+    yaw: wrapYaw(numOr(s.yaw, SCENE_DEFAULT.yaw)),
+    pitch: round4(Math.max(-CAM.pitchLim, Math.min(CAM.pitchLim,
+                  numOr(s.pitch, SCENE_DEFAULT.pitch)))),
+    zoom: round4(Math.max(CAM.zoomLo, Math.min(CAM.zoomHi,
+                 numOr(s.zoom, SCENE_DEFAULT.zoom)))),
+    rot: false,
+  };
+  out.rot = out.view !== "heat" && rotWanted;
+  return out;
+}
+
+/* Scene -> query string. Fixed key order, values URL-safe as written, so
+ * equal scenes give byte-equal URLs. */
+function serializeScene(s) {
+  return "tensor=" + s.tensor + "&view=" + s.view + "&q=" + s.quantity +
+    "&sample=" + s.sample + "&step=" + s.step +
+    "&yaw=" + s.yaw + "&pitch=" + s.pitch + "&zoom=" + s.zoom +
+    "&rot=" + (s.rot ? 1 : 0);
+}
+
+/* Query/hash string -> raw partial scene (strings; sanitizeScene finishes).
+ * Unknown keys and malformed percent-escapes are skipped, never fatal. */
+function parseScene(qs) {
+  const out = {};
+  const text = String(qs == null ? "" : qs).replace(/^[?#]/, "");
+  if (!text) return out;
+  for (const part of text.split("&")) {
+    const eq = part.indexOf("=");
+    if (eq <= 0) continue;
+    let k, v;
+    try {
+      k = decodeURIComponent(part.slice(0, eq));
+      v = decodeURIComponent(part.slice(eq + 1));
+    } catch (e) { continue; }
+    if (k === "tensor") out.tensor = v;
+    else if (k === "view") out.view = v;
+    else if (k === "q" || k === "quantity") out.quantity = v;
+    else if (k === "sample") out.sample = v;
+    else if (k === "step") out.step = v;
+    else if (k === "yaw") out.yaw = v;
+    else if (k === "pitch") out.pitch = v;
+    else if (k === "zoom") out.zoom = v;
+    else if (k === "rot") out.rot = v;
+  }
+  return out;
+}
+
+/* Auto-rotation: one gentle revolution per ROT_REV_MS. yawAtTime is THE
+ * formula — the live loop and the renderAt(ms) capture hook both call it,
+ * so a rendered frame is a pure function of (scene, ms). */
+const ROT_REV_MS = 48000;
+function yawAtTime(baseYaw, ms) {
+  return baseYaw + (Math.PI * 2 / ROT_REV_MS) * ms;
+}
+
+/* ------------------------- tour (presentation) ------------------------- */
+/* Captioned preset scenes, advanced BY HAND (N/B or the bar's buttons) —
+ * no timers anywhere, so the tour respects reduced motion by construction.
+ * Every scene must already be sanitized (checked at startup). */
+const TOUR = [
+  { caption: "wte — 27 token embeddings × 32 residual dims: the lookup " +
+      "table where every character starts. Lookup rows are selected, " +
+      "never multiplied, so this tensor has no contribution mode.",
+    scene: { tensor: "wte", view: "cloud", quantity: "weight",
+      sample: 0, step: 3, yaw: 0.62, pitch: -0.38, zoom: 1, rot: false } },
+  { caption: "fc1 as a flat heatmap — 128 hidden units × 32 residual " +
+      "dims of committed Q16.48 integers, blue negative, orange positive.",
+    scene: { tensor: "mlp_fc1", view: "heat", quantity: "weight",
+      sample: 0, step: 3, yaw: 0.62, pitch: -0.38, zoom: 1, rot: false } },
+  { caption: "the same fc1 matrix as terrain — height and color are the " +
+      "stored integer, scaled by the tensor's exact max |value|.",
+    scene: { tensor: "mlp_fc1", view: "cloud", quantity: "weight",
+      sample: 0, step: 3, yaw: 0.62, pitch: -0.38, zoom: 1, rot: false } },
+  { caption: "fc1 multiplied by a recorded input — every mark is " +
+      "fp_mul(w[row,col], xn_mlp[col]) at sample 0, step 3; each row " +
+      "re-sums to the C oracle's h_pre exactly.",
+    scene: { tensor: "mlp_fc1", view: "cloud", quantity: "contrib",
+      sample: 0, step: 3, yaw: 0.62, pitch: -0.38, zoom: 1, rot: false } },
+  { caption: "the full 4-tuple (col, row, weight, contribution) — four " +
+      "shadows of one object, sharing one camera. Each panel drops the " +
+      "coordinate it names.",
+    scene: { tensor: "mlp_fc1", view: "4d", quantity: "weight",
+      sample: 0, step: 3, yaw: 0.7, pitch: -0.2, zoom: 1, rot: false } },
+  { caption: "wo in 4-D — attention's output projection. Row sums of " +
+      "these products, plus the residual x0, rebuild x_mid exactly.",
+    scene: { tensor: "attn_wo", view: "4d", quantity: "weight",
+      sample: 0, step: 3, yaw: 0.7, pitch: -0.2, zoom: 1, rot: false } },
+  { caption: "fc2 in 4-D — the contraction back from 128 to 32. Its " +
+      "input is ReLU(h_pre), so whole columns vanish where the hidden " +
+      "unit is switched off.",
+    scene: { tensor: "mlp_fc2", view: "4d", quantity: "weight",
+      sample: 0, step: 3, yaw: 0.7, pitch: -0.2, zoom: 1, rot: false } },
+  { caption: "lm_head at the last step of sample 0 — the readout. Row r " +
+      "of these products sums to logit r: the exact integers that pick " +
+      "the next character.",
+    scene: { tensor: "lm_head", view: "cloud", quantity: "contrib",
+      sample: 0, step: TRACE.samples[0].steps.length - 1,
+      yaw: 0.62, pitch: -0.38, zoom: 1.15, rot: false } },
+];
+
+/* ============================ self-checks ============================ */
+function runChecks() {
+  let checks = 0;
+  const ok = (cond, msg) => {
+    checks++;
+    if (!cond) throw new Error("self-check failed: " + msg);
+  };
+
+  const model = buildModel();
+  const parsed = model.parsed;
+  ok(parsed.weights.length === 9, "9 learned tensors in the checkpoint");
+  for (const def of TENSOR_DEFS) {
+    const t = model.raw.get(def.key);
+    ok(t && t.rows === def.rows && t.cols === def.cols,
+       def.key + " has shape " + def.rows + "x" + def.cols);
+    ok(fnv1a64(t.raw).toString() === SUMMARY.tensor_fnv1a64[def.mgw],
+       def.key + " FNV-1a-64 matches the C harness record");
+  }
+  const cfg = parsed.config;
+  ok(cfg.hidden_dim === NE && cfg.intermediate_dim === MD,
+     "config dims 32/128 as assumed");
+  ok(cfg.vocab_size === VOC && cfg.max_seq_len === BLOCK,
+     "config vocab 27, block 8 as assumed");
+
+  ok(TRACE.samples.length === 20, "20 traced samples");
+  ok(TRACE.samples.every((s) => s.match_pristine),
+     "every traced sample matches the pristine runtime");
+  const s0 = TRACE.samples[DEFAULT_SAMPLE];
+  ok(s0 && s0.steps.length > DEFAULT_STEP,
+     "default sample/step (0, 3) exists in the trace");
+
+  ok(fpMul(FP1, FP1) === FP1, "fp_mul(1, 1) = 1");
+  ok(fpMul(FP1 / 2n, FP1 / 2n) === FP1 / 4n, "fp_mul(0.5, 0.5) = 0.25");
+  ok(fpMul(-FP1, FP1) === -FP1, "fp_mul(-1, 1) = -1");
+  ok(fpMul(1n, 1n) === 0n, "fp_mul floors at bit 48 (1ulp * 1ulp -> 0)");
+
+  const pA = project3(0.31, -0.62, 0.47, 0.8, -0.35, 1.2);
+  const pB = project3(0.31, -0.62, 0.47, 0.8, -0.35, 1.2);
+  ok(pA.x === pB.x && pA.y === pB.y && pA.depth === pB.depth && pA.f === pB.f,
+     "project3 is pure (same input, identical output)");
+
+  ok(DEF_BY_KEY.get("wte").input === null && DEF_BY_KEY.get("wpe").input === null,
+     "wte/wpe are lookup tables: contribution undefined");
+
+  /* Row-sum identities at two recorded steps: the default one, and the
+   * last step of the last sample. Every applicable row is one check. */
+  const sLast = TRACE.samples[TRACE.samples.length - 1];
+  const pairs = [
+    { tag: "sample 0 step 3", step: s0.steps[DEFAULT_STEP] },
+    { tag: "sample 19 last step", step: sLast.steps[sLast.steps.length - 1] },
+  ];
+  for (const { tag, step } of pairs)
+    for (const def of TENSOR_DEFS) {
+      if (!def.input) continue;
+      const t = model.raw.get(def.key);
+      const contrib = contributions(def, t, step);
+      const bad = rowIdentity(def, t, step, contrib);
+      for (let r = 0; r < def.rows; r++)
+        ok(!bad.includes(r),
+           def.key + " row " + r + " products sum to recorded " +
+           def.input.out + " (" + tag + ")");
+    }
+
+  /* Contribution grids are full, and weight scaling is well-defined. */
+  for (const def of TENSOR_DEFS) {
+    if (def.input) {
+      const c = contributions(def, model.raw.get(def.key), s0.steps[DEFAULT_STEP]);
+      ok(c.length === def.rows * def.cols,
+         def.key + " contribution grid covers every cell");
+    }
+    ok(maxAbsBig(model.raw.get(def.key).raw) > 0n,
+       def.key + " has a nonzero max |weight| (display scale defined)");
+  }
+
+  /* 4-D shadows: the four panels are the four 3-subsets of the tuple
+   * (col, row, weight, contribution), each dropping exactly the
+   * coordinate it names; normalized tuples stay inside [-1, 1] and each
+   * panel's pick() routes the right coordinate to the right axis. */
+  const AXES4 = ["col", "row", "weight", "contribution"];
+  ok(PANELS4D.length === 4, "four 4-D panels");
+  const drops = new Set();
+  for (const p of PANELS4D) {
+    const shown = [p.x, p.y, p.z];
+    ok(new Set(shown).size === 3 && shown.every((a) => AXES4.includes(a)),
+       "panel (drops " + p.drops + ") shows 3 distinct tuple coordinates");
+    ok(AXES4.filter((a) => !shown.includes(a)).join() === p.drops,
+       "panel drops exactly the coordinate it names (" + p.drops + ")");
+    drops.add(p.drops);
+  }
+  ok(drops.size === 4, "the four panels drop four distinct coordinates");
+
+  const def4 = DEF_BY_KEY.get(DEFAULT_TENSOR);
+  const t4 = tuples4D(def4, model.raw.get(DEFAULT_TENSOR),
+                      s0.steps[DEFAULT_STEP]);
+  ok(t4.tuples.length === def4.rows * def4.cols,
+     "4-D tuples cover every cell of the default tensor");
+  ok(t4.wMax > 0n && t4.pMax > 0n,
+     "both 4-D value axes have a nonzero exact max (scales defined)");
+  let inRange = true;
+  for (const tu of t4.tuples)
+    for (const v of [tu.cN, tu.rN, tu.wN, tu.pN])
+      if (!(v >= -1 && v <= 1)) inRange = false;
+  ok(inRange, "every normalized 4-D coordinate lies in [-1, 1]");
+  const tu57 = t4.tuples[5 * def4.cols + 7];
+  ok(tu57.r === 5 && tu57.c === 7, "4-D tuple grid is row-major");
+  const picked = PANELS4D.map((p) => p.pick(tu57));
+  ok(picked[0][1] === tu57.wN && picked[1][1] === tu57.pN,
+     "upper panels: height = weight (UL) and contribution (UR)");
+  ok(picked[2][0] === tu57.rN && picked[2][2] === tu57.pN &&
+     picked[3][0] === tu57.cN && picked[3][2] === tu57.pN,
+     "lower panels place contribution on the depth axis");
+  ok(picked[0][0] === tu57.cN && picked[0][2] === tu57.rN,
+     "UL panel is exactly the 3-D weight cloud's axes");
+
+  /* Scene codec: identical URLs must restore identical scenes. The codec
+   * is pure, so all of it is checkable here, DOM-free. */
+  const sd = sanitizeScene({});
+  ok(sd.tensor === DEFAULT_TENSOR && sd.sample === DEFAULT_SAMPLE &&
+     sd.step === DEFAULT_STEP && sd.view === "cloud" &&
+     sd.quantity === "weight",
+     "empty scene sanitizes to the page defaults");
+  ok(serializeScene(sanitizeScene(parseScene("?" + serializeScene(sd))))
+     === serializeScene(sd),
+     "default scene round-trips through the URL codec byte-identically");
+  ok(/^[a-z0-9_.=&-]+$/i.test(serializeScene(sd)),
+     "serialized scenes are URL-safe without percent-escaping");
+  const ex = sanitizeScene(parseScene(
+    "?tensor=mlp_fc1&view=4d&sample=0&step=3&yaw=0.7&pitch=-0.2"));
+  ok(ex.tensor === "mlp_fc1" && ex.view === "4d" && ex.sample === 0 &&
+     ex.step === 3, "the documented example deep link parses");
+  ok(ex.yaw === 0.7 && ex.pitch === -0.2 && ex.zoom === 1,
+     "example link: camera restored exactly, missing zoom defaulted");
+  ok(serializeScene(sanitizeScene(parseScene("?" + serializeScene(ex))))
+     === serializeScene(ex),
+     "example scene round-trips through the URL codec byte-identically");
+  const junk = sanitizeScene(parseScene(
+    "tensor=nope&view=zzz&q=zzz&sample=99&step=-4&yaw=abc&pitch=9&zoom=0&rot=maybe"));
+  ok(junk.tensor === DEFAULT_TENSOR && junk.view === "cloud" &&
+     junk.quantity === "weight",
+     "junk tensor/view/quantity fall back to defaults");
+  ok(junk.sample === TRACE.samples.length - 1 && junk.step === 0,
+     "out-of-range sample and step clamp into the trace's range");
+  ok(junk.yaw === SCENE_DEFAULT.yaw && junk.pitch === CAM.pitchLim &&
+     junk.zoom === CAM.zoomLo,
+     "junk yaw defaults; pitch and zoom clamp to the camera limits");
+  ok(junk.rot === false, "rot only turns on for an explicit rot=1");
+  const lk = sanitizeScene({ tensor: "wte", view: "4d", quantity: "contrib" });
+  ok(lk.view === "cloud" && lk.quantity === "weight",
+     "lookup tensor: 4-D and contribution coerce away (no input vector)");
+  ok(sanitizeScene({ view: "heat", rot: "1" }).rot === false,
+     "heatmap scenes never auto-rotate");
+  ok(sanitizeScene({ yaw: Math.PI * 2 + 0.5 }).yaw === 0.5,
+     "yaw wraps by whole revolutions into (-pi, pi]");
+  const wy = sanitizeScene({ yaw: 100 }).yaw;
+  ok(sanitizeScene({ yaw: wy }).yaw === wy && wy >= -3.1415 && wy <= 3.1415,
+     "yaw wrapping is idempotent and bounded");
+  ok(sanitizeScene(parseScene("?bogus=1&tensor=wpe")).tensor === "wpe",
+     "unknown URL params are ignored");
+  ok(sanitizeScene(parseScene("%zz=1&tensor=attn_wq")).tensor === "attn_wq",
+     "a malformed percent-escape skips that pair only");
+  ok(sanitizeScene(parseScene("q=contrib")).quantity === "contrib" &&
+     sanitizeScene(parseScene("quantity=contrib")).quantity === "contrib",
+     "quantity accepts both q= and quantity=");
+
+  /* Rotation: gentle, and a pure function of time. */
+  ok(ROT_REV_MS >= 40000 && ROT_REV_MS <= 60000,
+     "auto-rotation takes 40-60 s per revolution");
+  ok(yawAtTime(0.62, 0) === 0.62,
+     "yawAtTime at t=0 is the scene's own yaw (frame 0 = the still frame)");
+  ok(Math.abs(yawAtTime(0, ROT_REV_MS) - Math.PI * 2) < 1e-9,
+     "yawAtTime advances one full revolution per ROT_REV_MS");
+
+  /* Tour: preset scenes must already obey every rule above. */
+  ok(TOUR.length >= 6, "the tour has at least 6 scenes");
+  let tourFixed = true, tourCap = true, tourStill = true;
+  for (const t of TOUR) {
+    if (serializeScene(sanitizeScene(t.scene)) !== serializeScene(t.scene))
+      tourFixed = false;
+    if (typeof t.caption !== "string" || t.caption.length < 12)
+      tourCap = false;
+    if (t.scene.rot !== false) tourStill = false;
+  }
+  ok(tourFixed, "every tour scene is a sanitizeScene fixed point");
+  ok(tourCap, "every tour scene carries a caption");
+  ok(tourStill, "tour scenes are still (presentation is hand-advanced)");
+  ok(new Set(TOUR.map((t) => t.scene.view)).size === VIEWS.length,
+     "the tour visits all three views");
+
+  /* File strip: spans tile the file exactly, no gaps, no overlaps. */
+  const spans = fileSpans(parsed);
+  ok(spans.length === 3 + parsed.tensors.length,
+     "file strip: one span per region and tensor");
+  ok(spans[3].start === 128 + parsed.tensors.length * 96,
+     "tensor data begins right after the index");
+  let tiled = true;
+  for (let i = 1; i < spans.length; i++)
+    if (spans[i].start !== spans[i - 1].end) tiled = false;
+  ok(tiled, "file spans are contiguous (no gaps, no overlaps)");
+  ok(spans[spans.length - 1].end === parsed.fileSize,
+     "file spans end exactly at the file size");
+
+  return { checks, model };
+}
+
+function nodeSelfTest() {
+  const r = runChecks();
+  globalThis.__PAGE_CHECK__ = { page: "weights", pass: true, checks: r.checks };
+}
+</script>
+<script>
+"use strict";
+/* ======================= browser layer =======================
+ * Nothing here runs under Node: top-level code only defines functions
+ * and one inert singleton. All pixel math is display geometry. */
+
+let UI = null;   /* set by init() */
+
+const byId = (id) => document.getElementById(id);
+const clampF = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+
+const GOLD = "#ffd166";
+const RAMP_NEG = [77, 171, 247];    /* #4dabf7 negative pole            */
+const RAMP_POS = [255, 169, 77];    /* #ffa94d positive pole            */
+const RAMP_ZERO = [17, 21, 31];     /* #11151f panel bg: zero = no ink  */
+const MONO_STACK = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+const FAM_SPAN_COLORS = {          /* file strip fills (display)        */
+  "wte": "#74c0fc", "wpe": "#ffd43b", "lm_head": "#f783ac",
+  "layers.0.attn_wq": "#3b5bdb", "layers.0.attn_wk": "#3b5bdb",
+  "layers.0.attn_wv": "#3b5bdb", "layers.0.attn_wo": "#3b5bdb",
+  "layers.0.mlp_fc1": "#5f3dc4", "layers.0.mlp_fc2": "#5f3dc4",
+  "tokenizer.uchars": "#3a4152", "rng.state": "#3a4152",
+};
+
+/* Diverging ramp, identical mapping to the atlas (display-only). */
+function rampRGB(vNum, maxNum) {
+  let r = RAMP_ZERO[0], g = RAMP_ZERO[1], b = RAMP_ZERO[2];
+  if (vNum !== 0 && maxNum > 0) {
+    const t = clampF(vNum / maxNum, -1, 1);
+    const pole = t < 0 ? RAMP_NEG : RAMP_POS;
+    const a = t < 0 ? -t : t;
+    r = RAMP_ZERO[0] + (pole[0] - RAMP_ZERO[0]) * a;
+    g = RAMP_ZERO[1] + (pole[1] - RAMP_ZERO[1]) * a;
+    b = RAMP_ZERO[2] + (pole[2] - RAMP_ZERO[2]) * a;
+  }
+  return [r, g, b];
+}
+function rampCss(vNum, maxNum) {
+  const [r, g, b] = rampRGB(vNum, maxNum);
+  return "rgb(" + Math.round(r) + "," + Math.round(g) + "," + Math.round(b) + ")";
+}
+/* Vivid variant for the 3-D cloud and 4-D shadows only (heat keeps the
+   atlas-identical linear ramp above): saturated poles and a square-root
+   magnitude curve, so mid-range points read as color, not grey. */
+const RAMP_NEG_V = [51, 154, 255];  /* #339aff vivid blue               */
+const RAMP_POS_V = [255, 212, 59];  /* #ffd43b vivid yellow             */
+function rampCssVivid(vNum, maxNum) {
+  let r = RAMP_ZERO[0], g = RAMP_ZERO[1], b = RAMP_ZERO[2];
+  if (vNum !== 0 && maxNum > 0) {
+    const t = clampF(vNum / maxNum, -1, 1);
+    const pole = t < 0 ? RAMP_NEG_V : RAMP_POS_V;
+    const a = Math.sqrt(t < 0 ? -t : t);
+    r = RAMP_ZERO[0] + (pole[0] - RAMP_ZERO[0]) * a;
+    g = RAMP_ZERO[1] + (pole[1] - RAMP_ZERO[1]) * a;
+    b = RAMP_ZERO[2] + (pole[2] - RAMP_ZERO[2]) * a;
+  }
+  return "rgb(" + Math.round(r) + "," + Math.round(g) + "," + Math.round(b) + ")";
+}
+function depthAlpha(depth) {
+  const t = clampF((depth + 1.7) / 3.4, 0, 1);
+  return 0.55 + 0.45 * t;
+}
+
+function fitCanvas(cv) {
+  const dpr = (typeof devicePixelRatio === "number" && devicePixelRatio) || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  const bw = Math.max(1, Math.round(w * dpr)),
+        bh = Math.max(1, Math.round(h * dpr));
+  if (cv.width !== bw || cv.height !== bh) { cv.width = bw; cv.height = bh; }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+
+/* ---------------- current selection helpers ---------------- */
+function curDef() { return DEF_BY_KEY.get(UI.state.tensor); }
+function curTensor() { return UI.model.raw.get(UI.state.tensor); }
+function curStep() {
+  return TRACE.samples[UI.state.sample].steps[UI.state.step];
+}
+
+/* The displayed BigInt grid + its exact max |value|; contribution grids
+ * are cached per (tensor, sample, step) and identity-verified on entry. */
+function quantityGrid() {
+  const def = curDef(), t = curTensor();
+  if (UI.state.quantity === "weight" || !def.input) {
+    const arr = t.raw;
+    return { arr, maxAbs: maxAbsBig(arr), contrib: false };
+  }
+  const key = def.key + "/" + UI.state.sample + "/" + UI.state.step;
+  let e = UI.contribCache.get(key);
+  if (!e) {
+    const step = curStep();
+    const arr = contributions(def, t, step);
+    const bad = rowIdentity(def, t, step, arr);
+    e = { arr, maxAbs: maxAbsBig(arr), rowsOk: bad.length === 0 };
+    UI.contribCache.set(key, e);
+  }
+  return { arr: e.arr, maxAbs: e.maxAbs, contrib: true, rowsOk: e.rowsOk };
+}
+
+/* ---------------- exact readouts ---------------- */
+function cellReadout(r, c) {
+  const def = curDef(), t = curTensor(), u = UI.model.uchars;
+  const w = t.raw[r * def.cols + c];
+  let h = "<b>" + def.key + "[" + r + ", " + c + "]</b> &mdash; " +
+    '<span class="k">row</span> ' + axisLabel(def.rowKind, r, def, u) +
+    ' &middot; <span class="k">col</span> ' + axisLabel(def.colKind, c, def, u) +
+    '<br><span class="k">stored raw</span> <b>' + w.toString() + "</b> " +
+    '<span class="k">= ' + Q48.toDecimalString(w) + " &middot; " +
+    Q48.toHex(w) + "</span>";
+  /* the 4-D view always shows both quantities; otherwise follow the toggle */
+  const showContrib = def.input &&
+    (UI.state.view === "4d" || quantityGrid().contrib);
+  if (showContrib) {
+    const step = curStep();
+    const invec = inputVector(def, step);
+    const inv = invec[c], p = fpMul(w, inv);
+    h += '<br><span class="k">input[' + c + "] raw</span> <b>" + inv.toString() +
+      "</b> <span class=\"k\">= " + Q48.toDecimalString(inv) + "</span>" +
+      '<br><span class="k">fp_mul(w, input) raw</span> <b>' + p.toString() +
+      "</b> <span class=\"k\">= " + Q48.toDecimalString(p) + "</span>" +
+      '<br><span class="k">row ' + r + " products sum exactly to recorded " +
+      def.input.out + "[" + r + "]" +
+      (def.input.res ? " &minus; " + def.input.res + "[" + r + "]" : "") +
+      " &mdash; verified ✓</span>";
+  }
+  return h;
+}
+
+function fileReadout(sp) {
+  const bytes = sp.end - sp.start;
+  let h = "<b>" + sp.name + "</b> <span class=\"k\">bytes [" + sp.start +
+    ", " + sp.end + ") &middot; " + bytes + " B</span>";
+  if (sp.kind === "tensor") {
+    const t = sp.tensor;
+    h += '<br><span class="k">' +
+      (t.ndims === 2 ? t.rows + " × " + t.cols : t.numElements + " scalars") +
+      " &middot; " + t.numElements + " int64 elements, little-endian, " +
+      "packed at offset " + sp.start + "</span>";
+  } else if (sp.kind === "header") {
+    h += '<br><span class="k">magic \"MGW\\0\", version 1, endian tag ' +
+      "0x01020304, tensor count, index/data offsets</span>";
+  } else if (sp.kind === "config") {
+    h += '<br><span class="k">10 × i32: dims 32, heads 4, head_dim 8, ' +
+      "mlp 128, vocab 27, block 8, &#8230;</span>";
+  } else {
+    h += '<br><span class="k">96 B per entry: name[64], u64 count, ' +
+      "u64 offset, u32 ndims, u32 shape[2]</span>";
+  }
+  return h;
+}
+
+/* ---------------- 3-D cloud ---------------- */
+function drawCloud() {
+  const { ctx, w, h } = fitCanvas(byId("stage"));
+  ctx.clearRect(0, 0, w, h);
+  const def = curDef(), V = UI.view, yaw = renderYaw();
+  const g = quantityGrid();
+  const maxNum = g.maxAbs > 0n ? Q48.toNumber(g.maxAbs) : 1; /* display-only */
+  const cx = w / 2, cy = h / 2, basePx = Math.min(w, h) * 0.42;
+  const P = (x, y, z) => {
+    const p = project3(x, y, z, yaw, V.pitch, V.zoom);
+    return { sx: cx + p.x * basePx, sy: cy + p.y * basePx, depth: p.depth, f: p.f };
+  };
+
+  /* floor grid at y = -1.25 (orientation aid) */
+  ctx.lineWidth = 1; ctx.strokeStyle = "#1d2432";
+  for (let i = 0; i <= 8; i++) {
+    const t = i / 4 - 1;
+    let a = P(t, -1.25, -1), b = P(t, -1.25, 1);
+    ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+    a = P(-1, -1.25, t); b = P(1, -1.25, t);
+    ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+  }
+  /* zero plane (dashed): marks above are positive, below negative */
+  ctx.strokeStyle = "#2c3446"; ctx.setLineDash([5, 5]);
+  const zc = [P(-1, 0, -1), P(1, 0, -1), P(1, 0, 1), P(-1, 0, 1)];
+  ctx.beginPath();
+  ctx.moveTo(zc[0].sx, zc[0].sy);
+  for (let i = 1; i < 5; i++) ctx.lineTo(zc[i % 4].sx, zc[i % 4].sy);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  /* axis captions (display); clamped so no camera pushes them off-canvas */
+  ctx.font = "10px " + MONO_STACK; ctx.fillStyle = "#7f849c";
+  const eCol = P(0, -1.12, 1.18), eRow = P(1.18, -1.12, 0), eVal = P(-1.18, 0.55, -1.18);
+  ctx.textAlign = "center";
+  const cap = (txt, p) => ctx.fillText(txt,
+    clampF(p.sx, 70, w - 70), clampF(p.sy, 14, h - 8));
+  cap("row: " + def.rowAxis + " 0→" + (def.rows - 1), eCol);
+  cap("col: " + def.colAxis + " 0→" + (def.cols - 1), eRow);
+  cap("height: " + (g.contrib ? "contribution" : "weight"), eVal);
+
+  /* points: x = col, z = row, y = value (all display-normalized) */
+  const rows = def.rows, cols = def.cols, arr = g.arr;
+  const pts = UI.cloudPts;
+  pts.length = 0;
+  const rBase = rows * cols > 2000 ? 2.3 : 3.2;
+  for (let r = 0; r < rows; r++) {
+    const z = rows === 1 ? 0 : (r / (rows - 1)) * 2 - 1;
+    for (let c = 0; c < cols; c++) {
+      const x = cols === 1 ? 0 : (c / (cols - 1)) * 2 - 1;
+      const vNum = Q48.toNumber(arr[r * cols + c]);       /* display-only */
+      const y = maxNum > 0 ? vNum / maxNum : 0;
+      const p = P(x, y, z);
+      pts.push({ sx: p.sx, sy: p.sy, depth: p.depth, f: p.f, r, c, vNum });
+    }
+  }
+  pts.sort((a, b) => b.depth - a.depth);                  /* far first */
+  for (const p of pts) {
+    ctx.globalAlpha = depthAlpha(p.depth);
+    ctx.fillStyle = rampCssVivid(p.vNum, maxNum);
+    ctx.beginPath();
+    ctx.arc(p.sx, p.sy, Math.max(1.2, rBase * p.f), 0, 6.2832);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  /* hovered cell: gold ring on top */
+  if (UI.hover) {
+    const hp = pts.find((p) => p.r === UI.hover.r && p.c === UI.hover.c);
+    if (hp) {
+      ctx.strokeStyle = GOLD; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hp.sx, hp.sy, Math.max(3, rBase * hp.f) + 2.5, 0, 6.2832);
+      ctx.stroke();
+    }
+  }
+}
+
+function cloudPick(ev) {
+  const cv = byId("stage");
+  const rect = cv.getBoundingClientRect();
+  const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+  let best = null, bd = 121;                     /* 11px pick radius */
+  for (const p of UI.cloudPts) {
+    const dx = p.sx - mx, dy = p.sy - my;
+    const d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+
+/* ---------------- 4-D shadows ---------------- */
+/* Tuples are cached per (tensor, sample, step); the row-sum identity is
+ * re-verified on first entry, same honesty rule as the contribution grid. */
+function tuples4DCached() {
+  const def = curDef(), t = curTensor();
+  const key = def.key + "/" + UI.state.sample + "/" + UI.state.step;
+  let e = UI.t4Cache.get(key);
+  if (!e) {
+    const step = curStep();
+    e = tuples4D(def, t, step);
+    e.rowsOk = rowIdentity(def, t, step, e.contrib).length === 0;
+    UI.t4Cache.set(key, e);
+  }
+  return e;
+}
+
+/* Four quadrants of the one stage canvas, all projected through the ONE
+ * shared UI.view — orbiting anywhere turns every panel, because they are
+ * four shadows of the same 4-D object. Marks are colored by each panel's
+ * own height axis. All picked points land in UI.cloudPts so cloudPick()
+ * and the hover ring work unchanged across all panels. */
+function draw4D() {
+  const { ctx, w, h } = fitCanvas(byId("stage"));
+  ctx.clearRect(0, 0, w, h);
+  const def = curDef(), V = UI.view, yaw = renderYaw();
+  const t4 = tuples4DCached();
+  const pw = w / 2, ph = h / 2;
+  const pts = UI.cloudPts;
+  pts.length = 0;
+  const rBase = def.rows * def.cols > 2000 ? 1.7 : 2.5;
+
+  for (let k = 0; k < 4; k++) {
+    const pan = PANELS4D[k];
+    const ox = (k % 2) * pw, oy = k < 2 ? 0 : ph;
+    const cx = ox + pw / 2, cy = oy + ph / 2;
+    const basePx = Math.min(pw, ph) * 0.33;
+    const P = (x, y, z) => {
+      const p = project3(x, y, z, yaw, V.pitch, V.zoom);
+      return { sx: cx + p.x * basePx, sy: cy + p.y * basePx,
+               depth: p.depth, f: p.f };
+    };
+
+    /* quadrant frame + caption (screen-fixed, never projected) */
+    ctx.strokeStyle = "#1d2432"; ctx.lineWidth = 1;
+    ctx.strokeRect(ox + 3.5, oy + 3.5, pw - 7, ph - 7);
+    ctx.font = "10px " + MONO_STACK; ctx.textAlign = "left";
+    ctx.fillStyle = "#9aa3b8";
+    ctx.fillText("x " + pan.x + " · y " + pan.y + " · z " + pan.z,
+                 ox + 10, oy + 16);
+    ctx.fillStyle = "#7f849c";
+    ctx.fillText("drops " + pan.drops, ox + 10, oy + 28);
+
+    /* zero plane of the panel's height axis (dashed) */
+    ctx.strokeStyle = "#2c3446"; ctx.setLineDash([4, 4]);
+    const zc = [P(-1, 0, -1), P(1, 0, -1), P(1, 0, 1), P(-1, 0, 1)];
+    ctx.beginPath();
+    ctx.moveTo(zc[0].sx, zc[0].sy);
+    for (let i = 1; i < 5; i++) ctx.lineTo(zc[i % 4].sx, zc[i % 4].sy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    /* marks, far first; color = the panel's own height (y) value */
+    const local = [];
+    for (const tu of t4.tuples) {
+      const a = pan.pick(tu);
+      const p = P(a[0], a[1], a[2]);
+      local.push({ sx: p.sx, sy: p.sy, depth: p.depth, f: p.f,
+                   r: tu.r, c: tu.c, vNum: a[1] });
+    }
+    local.sort((a, b) => b.depth - a.depth);
+    for (const p of local) {
+      ctx.globalAlpha = depthAlpha(p.depth);
+      ctx.fillStyle = rampCssVivid(p.vNum, 1);  /* y already normalized */
+      ctx.beginPath();
+      ctx.arc(p.sx, p.sy, Math.max(1, rBase * p.f), 0, 6.2832);
+      ctx.fill();
+      pts.push(p);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* hovered cell: ring the SAME cell in every panel */
+  if (UI.hover) {
+    ctx.strokeStyle = GOLD; ctx.lineWidth = 2;
+    for (const p of pts)
+      if (p.r === UI.hover.r && p.c === UI.hover.c) {
+        ctx.beginPath();
+        ctx.arc(p.sx, p.sy, Math.max(2.5, rBase * p.f) + 2.5, 0, 6.2832);
+        ctx.stroke();
+      }
+  }
+}
+
+/* ---------------- heatmap ---------------- */
+function drawHeat() {
+  const def = curDef();
+  const g = quantityGrid();
+  const maxNum = g.maxAbs > 0n ? Q48.toNumber(g.maxAbs) : 1; /* display-only */
+  const rows = def.rows, cols = def.cols;
+  /* atlas idiom: wide cells along short (<=32) axes, narrow along 128 axes */
+  const cw = cols > 64 ? 5 : 14, ch = rows > 64 ? 5 : 14;
+  const cv = byId("heat");
+  cv.style.width = (cols * cw) + "px";
+  cv.style.height = (rows * ch) + "px";
+  const { ctx } = fitCanvas(cv);
+  /* 1 px per cell, then scale up with smoothing off (atlas idiom) */
+  const img = new ImageData(cols, rows);
+  for (let i = 0; i < rows * cols; i++) {
+    const [r, gg, b] = rampRGB(Q48.toNumber(g.arr[i]), maxNum); /* display */
+    const o = i * 4;
+    img.data[o] = r; img.data[o + 1] = gg; img.data[o + 2] = b;
+    img.data[o + 3] = 255;
+  }
+  const off = document.createElement("canvas");
+  off.width = cols; off.height = rows;
+  off.getContext("2d").putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, 0, 0, cols, rows, 0, 0, cols * cw, rows * ch);
+  if (UI.hover) {
+    ctx.strokeStyle = GOLD; ctx.lineWidth = 2;
+    ctx.strokeRect(UI.hover.c * cw + 1, UI.hover.r * ch + 1,
+                   cw - 2, ch - 2);
+  }
+  UI.heatCW = cw; UI.heatCH = ch;
+  byId("heatCap").textContent =
+    "rows ↓ " + def.rowAxis + " 0→" + (rows - 1) +
+    " · cols → " + def.colAxis + " 0→" + (cols - 1);
+}
+
+function heatCellAt(ev) {
+  const cv = byId("heat");
+  const rect = cv.getBoundingClientRect();
+  const def = curDef();
+  const c = Math.floor((ev.clientX - rect.left) / (UI.heatCW || 8));
+  const r = Math.floor((ev.clientY - rect.top) / (UI.heatCH || 8));
+  if (r < 0 || c < 0 || r >= def.rows || c >= def.cols) return null;
+  return { r, c };
+}
+
+/* ---------------- checkpoint byte strip ---------------- */
+function drawFilemap() {
+  const { ctx, w, h } = fitCanvas(byId("filemap"));
+  ctx.clearRect(0, 0, w, h);
+  const total = UI.model.parsed.fileSize;
+  const barY = 18, barH = 40;
+  const X = (byte) => (byte / total) * (w - 2) + 1;       /* display scale */
+  const def = curDef();
+  for (const sp of UI.spans) {
+    const x0 = X(sp.start), x1 = X(sp.end);
+    const sel = sp.kind === "tensor" && sp.tensor.name === def.mgw;
+    const hov = UI.fileHover === sp;
+    let fill = "#1a2030";
+    if (sp.kind === "tensor") fill = FAM_SPAN_COLORS[sp.tensor.name] || "#3a4152";
+    ctx.globalAlpha = sp.kind === "tensor" ? (hov ? 0.95 : 0.72) : (hov ? 0.9 : 1);
+    ctx.fillStyle = fill;
+    ctx.fillRect(x0, barY, Math.max(1, x1 - x0 - 0.5), barH);
+    ctx.globalAlpha = 1;
+    if (sel) {
+      ctx.strokeStyle = GOLD; ctx.lineWidth = 2;
+      ctx.strokeRect(x0 + 0.5, barY - 2.5, Math.max(1, x1 - x0 - 1), barH + 5);
+    }
+  }
+  ctx.font = "10px " + MONO_STACK; ctx.fillStyle = "#7f849c";
+  ctx.textAlign = "left";
+  ctx.fillText("byte 0", 1, barY - 6);
+  ctx.textAlign = "right";
+  ctx.fillText(total + " bytes · sha256 " + SUMMARY.model_sha256.slice(0, 12) +
+    "…", w - 1, barY - 6);
+  /* short labels under the wide spans */
+  ctx.textAlign = "center";
+  for (const sp of UI.spans) {
+    const x0 = X(sp.start), x1 = X(sp.end);
+    if (x1 - x0 < 34) continue;
+    const short = sp.kind === "tensor"
+      ? sp.tensor.name.replace("layers.0.", "").replace("tokenizer.", "")
+      : sp.name.split(" ")[0];
+    const sel = sp.kind === "tensor" && sp.tensor.name === def.mgw;
+    ctx.fillStyle = sel ? GOLD : "#7f849c";
+    ctx.fillText(short, (x0 + x1) / 2, barY + barH + 14);
+  }
+}
+
+function fileSpanAt(ev) {
+  const cv = byId("filemap");
+  const rect = cv.getBoundingClientRect();
+  const frac = (ev.clientX - rect.left) / Math.max(1, rect.width);
+  const byte = frac * UI.model.parsed.fileSize;
+  for (const sp of UI.spans)
+    if (byte >= sp.start && byte < sp.end) return sp;
+  return null;
+}
+
+/* ---------------- redraw plumbing ---------------- */
+function requestDraw() {
+  if (UI.rafPending) return;
+  UI.rafPending = true;
+  requestAnimationFrame(() => {
+    UI.rafPending = false;
+    if (UI.state.view === "heat") drawHeat();
+    else if (UI.state.view === "4d") draw4D();
+    else drawCloud();
+    drawFilemap();
+  });
+}
+
+/* ---------------- state changes ---------------- */
+/* Any state change invalidates the hovered readout (its quantity, tensor or
+   step no longer matches what is on screen), so drop it and hide the tip. */
+function clearHover() {
+  UI.hover = null;
+  byId("tip").style.display = "none";
+}
+
+function setView(v) {
+  if (v === "4d" && !curDef().input) return;    /* lookup: no 4th coordinate */
+  UI.state.view = v;
+  if (v === "heat") pauseRot();                 /* the heatmap never animates */
+  byId("btnCloud").setAttribute("aria-pressed", String(v === "cloud"));
+  byId("btnHeat").setAttribute("aria-pressed", String(v === "heat"));
+  byId("btn4D").setAttribute("aria-pressed", String(v === "4d"));
+  byId("cloudWrap").hidden = v === "heat";      /* cloud and 4-D share #stage */
+  byId("cloudWrap").classList.toggle("mode4d", v === "4d");
+  byId("heatWrap").hidden = v !== "heat";
+  /* the 4-D view shows both quantities at once; the toggle is moot there */
+  const both = v === "4d";
+  byId("btnWeight").disabled = both;
+  byId("btnContrib").disabled = both || !curDef().input;
+  byId("btnWeight").title = both ? "the 4-D view shows both quantities at once" : "";
+  rotUpdateBtn();
+  clearHover();
+  refreshText();
+  requestDraw();
+  syncURL();
+}
+
+function setQuantity(q) {
+  const def = curDef();
+  if (q === "contrib" && !def.input) return;    /* lookup: undefined */
+  UI.state.quantity = q;
+  byId("btnWeight").setAttribute("aria-pressed", String(q === "weight"));
+  byId("btnContrib").setAttribute("aria-pressed", String(q === "contrib"));
+  clearHover();
+  refreshText();
+  requestDraw();
+  syncURL();
+}
+
+function setTensor(key) {
+  UI.state.tensor = key;
+  byId("tensorSel").value = key;
+  const def = curDef();
+  /* leave 4-D first: refreshText must never see (lookup tensor, 4-D view) */
+  if (!def.input && UI.state.view === "4d") setView("cloud");
+  if (!def.input && UI.state.quantity === "contrib") setQuantity("weight");
+  byId("btnContrib").disabled = UI.state.view === "4d" || !def.input;
+  byId("btnContrib").title = def.input ? "" :
+    "lookup table: rows are selected, never multiplied — no input vector exists";
+  byId("btn4D").disabled = !def.input;
+  byId("btn4D").title = def.input ? "" :
+    "lookup table: no input vector, so no contribution coordinate exists";
+  clearHover();
+  refreshText();
+  requestDraw();
+  syncURL();
+}
+
+function setSampleStep(sample, step) {
+  const s = TRACE.samples[sample];
+  UI.state.sample = sample;
+  UI.state.step = clampF(step, 0, s.steps.length - 1);
+  rebuildStepSel();
+  clearHover();
+  refreshText();
+  requestDraw();
+  syncURL();
+}
+
+/* ---------------- text panels ---------------- */
+function stepChipText(s, i) {
+  const st = s.steps[i], u = UI.model.uchars;
+  const ch = (id) => id === VOC - 1 ? "⌀" : u[id];
+  return "step " + i + " — pos " + st.pos + ", " +
+         ch(st.token_in) + " → " + ch(st.chosen);
+}
+
+function refreshText() {
+  const def = curDef(), s = TRACE.samples[UI.state.sample];
+  const in4d = UI.state.view === "4d";
+  byId("stageTitle").textContent = def.label + " — " + def.role +
+    (in4d ? " — four shadows of (col, row, weight, contribution)" : "");
+  const g = quantityGrid();
+  const t4 = in4d ? tuples4DCached() : null;
+  const fmtMax = (label, m) => "max |" + label + "| " +
+    Q48.toDecimalString(m) + " (raw " + m.toString() + ")";
+  const maxTxt = in4d
+    ? fmtMax("weight", t4.wMax) + " · " + fmtMax("contribution", t4.pMax)
+    : fmtMax("value", g.maxAbs);
+  const vivid = UI.state.view !== "heat";       /* cloud & 4-D use the vivid ramp */
+  byId("stageLegend").innerHTML =
+    '<span class="swline"><span class="sw" style="background:' +
+    (vivid ? "#339aff" : "#4dabf7") + '"></span>negative</span> ' +
+    '<span class="swline"><span class="sw" style="background:#11151f;border:1px solid #262c3a"></span>zero</span> ' +
+    '<span class="swline"><span class="sw" style="background:' +
+    (vivid ? "#ffd43b" : "#ffa94d") + '"></span>positive</span> ' +
+    '<span class="swline"><span class="sw" style="background:#ffd166"></span>hovered cell</span> ' +
+    '<span class="k" style="font:11px var(--mono);color:var(--dim)">' +
+    maxTxt + (vivid
+      ? " · ramp &radic;|value|, symmetric about zero (display); readouts exact</span>"
+      : " · ramp linear in value, symmetric about zero (display); readouts exact</span>");
+  const contribShown = def.input && (UI.state.quantity === "contrib" || in4d);
+  byId("sampleSel").disabled = !contribShown;
+  byId("stepSel").disabled = !contribShown;
+  byId("btnStepPlay").disabled = !contribShown;   /* nothing to walk otherwise */
+  if (!contribShown && UI.stepPlay.playing) pauseSteps();
+  if (!def.input) {
+    byId("ctxNote").innerHTML = "<b>" + def.key + "</b> is a lookup table: a row is " +
+      "<i>selected</i> by " + (def.key === "wte" ? "token id" : "position") +
+      ", never multiplied by a vector. No input vector exists, so exact " +
+      "contribution is undefined here — quantity shows the stored weights.";
+  } else if (!contribShown) {
+    byId("ctxNote").innerHTML = "quantity = the stored Q16.48 integer itself, " +
+      "straight from the committed checkpoint — no sample, no step, no derivation. " +
+      "Switch to <b>exact contribution</b> to multiply this matrix against a recorded " +
+      "input (" + def.input.inLabel + ").";
+  } else {
+    const rowsOk = in4d ? t4.rowsOk : g.rowsOk;
+    const okTxt = rowsOk
+      ? "re-summed in this browser just now: every row reproduces the recorded " +
+        def.input.out + " exactly ✓"
+      : "ROW SUM MISMATCH — this should be impossible; see self-check badge";
+    byId("ctxNote").innerHTML =
+      (in4d ? "4-D shadows: each panel drops the coordinate it names. contribution" :
+              "quantity") +
+      " = fp_mul(w[row,col], input[col]), " +
+      "<b>input = " + def.input.inLabel + "</b> recorded at sample " +
+      UI.state.sample + " “" + s.text + "”, " + stepChipText(s, UI.state.step) +
+      ". Exact local product — not attribution, not a gradient, not the " +
+      "neuron’s total output. " +
+      (def.input.res ? "C adds the residual " + def.input.res +
+        " after the row sum; the identity below includes it. " : "") +
+      "<b>" + okTxt + "</b>";
+    if (!rowsOk) failBadge("row-sum identity failed");
+  }
+  const insDefault = UI.state.view === "heat"
+    ? "hover a cell, or focus the grid and use arrow keys — every readout is the exact integer."
+    : in4d
+    ? "hover a mark — the same cell rings in all four shadows. drag to orbit the one shared camera; every readout is the exact integer."
+    : "hover a mark — every readout is the exact integer. drag to orbit, wheel to zoom.";
+  if (!UI.hover) byId("insStage").innerHTML = insDefault;
+}
+
+function failBadge(msg) {
+  const b = byId("selfBadge");
+  b.className = "badge fail";
+  b.textContent = "self-check: FAILED — " + msg;
+}
+
+/* ---------------- interaction ---------------- */
+/* Every path that grabs the camera pauses the auto-rotation first (the
+ * accumulated offset folds into the base yaw, so nothing jumps), and every
+ * pose-changing gesture ends in syncURL(). */
+function attachOrbit(cv) {
+  let dragging = false, lx = 0, ly = 0;
+  cv.addEventListener("pointerdown", (e) => {
+    pauseRot();
+    dragging = true; lx = e.clientX; ly = e.clientY;
+    cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener("pointermove", (e) => {
+    if (!dragging) {
+      const p = cloudPick(e);
+      hoverCell(p ? { r: p.r, c: p.c } : null, e);
+      return;
+    }
+    const dx = e.clientX - lx, dy = e.clientY - ly;
+    lx = e.clientX; ly = e.clientY;
+    UI.view.yaw += dx * 0.008;
+    UI.view.pitch = clampF(UI.view.pitch + dy * 0.006,
+                           -CAM.pitchLim, CAM.pitchLim);
+    requestDraw();
+  });
+  cv.addEventListener("pointerup", () => { dragging = false; syncURL(); });
+  cv.addEventListener("mouseleave", () => hoverCell(null, null));
+  cv.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    pauseRot();
+    UI.view.zoom = clampF(UI.view.zoom * Math.exp(-e.deltaY * 0.0012),
+                          CAM.zoomLo, CAM.zoomHi);
+    requestDraw();
+    syncURL();
+  }, { passive: false });
+  cv.addEventListener("keydown", (e) => {
+    const V = UI.view;
+    let used = true;
+    if (e.key === "ArrowLeft") { pauseRot(); V.yaw -= 0.09; }
+    else if (e.key === "ArrowRight") { pauseRot(); V.yaw += 0.09; }
+    else if (e.key === "ArrowUp") {
+      pauseRot(); V.pitch = clampF(V.pitch - 0.07, -CAM.pitchLim, CAM.pitchLim);
+    } else if (e.key === "ArrowDown") {
+      pauseRot(); V.pitch = clampF(V.pitch + 0.07, -CAM.pitchLim, CAM.pitchLim);
+    } else if (e.key === "+" || e.key === "=") {
+      pauseRot(); V.zoom = clampF(V.zoom * 1.12, CAM.zoomLo, CAM.zoomHi);
+    } else if (e.key === "-" || e.key === "_") {
+      pauseRot(); V.zoom = clampF(V.zoom / 1.12, CAM.zoomLo, CAM.zoomHi);
+    } else if (e.key === "r" || e.key === "R") resetView();
+    else used = false;
+    if (used) { e.preventDefault(); requestDraw(); syncURL(); }
+  });
+}
+
+function resetView() {
+  pauseRot();
+  UI.view.yaw = DEFAULT_VIEW.yaw;
+  UI.view.pitch = DEFAULT_VIEW.pitch;
+  UI.view.zoom = DEFAULT_VIEW.zoom;
+  requestDraw();
+  syncURL();
+}
+
+/* ---------------- gentle auto-rotation ---------------- */
+/* A rAF loop — browser-only, so the Node self-check never sees a timer —
+ * advances a virtual clock and redraws the stage. The rendered yaw is
+ * always yawAtTime(base, virtualMs): the same pure formula renderAt()
+ * uses, so live playback and scripted capture agree frame for frame.
+ * Only the cloud and 4-D stage rotate; the heatmap and the byte strip
+ * are never animated. */
+function renderYaw() { return yawAtTime(UI.view.yaw, UI.rot.virtualMs); }
+
+function rotUpdateBtn() {
+  const b = byId("btnRot");
+  b.setAttribute("aria-pressed", String(UI.rot.playing));
+  b.textContent = (UI.rot.playing ? "❚❚" : "▸") + " auto-rotate";
+  b.disabled = UI.state.view === "heat";
+  b.title = UI.state.view === "heat"
+    ? "the heatmap is never animated"
+    : "gently orbit the camera, one revolution per 48 s; " +
+      "any interaction with the stage pauses it (P)";
+}
+
+function rotTick(ts) {
+  if (!UI.rot.playing) { UI.rot.raf = null; return; }
+  if (UI.rot.lastTs != null)     /* clamp hitches/hidden-tab gaps */
+    UI.rot.virtualMs += Math.min(ts - UI.rot.lastTs, 100);
+  UI.rot.lastTs = ts;
+  if (UI.state.view === "4d") draw4D(); else drawCloud();
+  UI.rot.raf = requestAnimationFrame(rotTick);
+}
+
+function playRot() {
+  if (UI.state.view === "heat") return;   /* never animate the heatmap */
+  if (!UI.rot.playing) {
+    UI.rot.playing = true;
+    UI.rot.lastTs = null;
+    UI.rot.raf = requestAnimationFrame(rotTick);
+  }
+  rotUpdateBtn();
+  syncURL();
+}
+
+/* Fold the rotation offset into the base yaw (the camera must not jump),
+ * then freeze. Every camera-grabbing interaction lands here first. */
+function pauseRot() {
+  const wasLive = UI.rot.playing || UI.rot.virtualMs !== 0;
+  if (UI.rot.raf != null) {
+    cancelAnimationFrame(UI.rot.raf);
+    UI.rot.raf = null;
+  }
+  if (UI.rot.virtualMs !== 0) {
+    UI.view.yaw = wrapYaw(renderYaw());
+    UI.rot.virtualMs = 0;
+  }
+  UI.rot.playing = false;
+  UI.rot.lastTs = null;
+  rotUpdateBtn();
+  if (wasLive) { requestDraw(); syncURL(); }
+}
+
+function toggleRot() { if (UI.rot.playing) pauseRot(); else playRot(); }
+
+/* ------------- auto-step (walks every sample/step pair) ------------- */
+/* Same shape as the rotation loop: rAF-clock cadence, self-terminating
+ * on its flag, started only from a browser-side click handler.  Purely
+ * transient UI state — never serialized into the URL. */
+function stepPlayUpdateBtn() {
+  const b = byId("btnStepPlay");
+  b.setAttribute("aria-pressed", String(UI.stepPlay.playing));
+  b.textContent = (UI.stepPlay.playing ? "❚❚" : "▸") + " auto-step";
+}
+
+function stepTick(ts) {
+  if (!UI.stepPlay.playing) { UI.stepPlay.raf = null; return; }
+  if (UI.stepPlay.lastTs == null) UI.stepPlay.lastTs = ts;
+  if (ts - UI.stepPlay.lastTs >= 1000) {
+    UI.stepPlay.lastTs = ts;
+    let sample = UI.state.sample, step = UI.state.step + 1;
+    if (step >= TRACE.samples[sample].steps.length) {
+      sample = (sample + 1) % TRACE.samples.length;
+      step = 0;
+      byId("sampleSel").value = String(sample);
+    }
+    setSampleStep(sample, step);
+  }
+  UI.stepPlay.raf = requestAnimationFrame(stepTick);
+}
+
+function playSteps() {
+  if (!UI.stepPlay.playing) {
+    UI.stepPlay.playing = true;
+    UI.stepPlay.lastTs = null;
+    UI.stepPlay.raf = requestAnimationFrame(stepTick);
+  }
+  stepPlayUpdateBtn();
+}
+
+function pauseSteps() {
+  if (UI.stepPlay.raf != null) {
+    cancelAnimationFrame(UI.stepPlay.raf);
+    UI.stepPlay.raf = null;
+  }
+  UI.stepPlay.playing = false;
+  UI.stepPlay.lastTs = null;
+  stepPlayUpdateBtn();
+}
+
+function toggleSteps() { if (UI.stepPlay.playing) pauseSteps(); else playSteps(); }
+
+/* ---------------- scene state (URL + capture hooks) ---------------- */
+/* The current scene, camera pose as rendered (rotation folded in). */
+function getScene() {
+  return sanitizeScene({
+    tensor: UI.state.tensor, view: UI.state.view,
+    quantity: UI.state.quantity,
+    sample: UI.state.sample, step: UI.state.step,
+    yaw: renderYaw(), pitch: UI.view.pitch, zoom: UI.view.zoom,
+    rot: UI.rot.playing,
+  });
+}
+
+/* The address bar always carries the current scene, so copying the URL IS
+ * saving the scene. Some file:// setups refuse replaceState — the page
+ * still works fully, links just stop self-updating. */
+function syncURL() {
+  if (UI.noURLSync) return;
+  try {
+    history.replaceState(null, "", "?" + serializeScene(getScene()));
+  } catch (e) { UI.noURLSync = true; }
+}
+
+/* Apply a full scene (deep link, tour, or the VIZ hook). Setter order
+ * matters: sample/step first (they only feed refreshText), then tensor
+ * (it may retarget view/quantity for lookups), view, quantity, camera,
+ * rotation last. sanitizeScene guarantees a consistent combination. */
+function applyScene(raw) {
+  const s = sanitizeScene(raw);
+  pauseRot();
+  UI.state.sample = s.sample;
+  UI.state.step = s.step;
+  byId("sampleSel").value = String(s.sample);
+  rebuildStepSel();
+  setTensor(s.tensor);
+  setView(s.view);
+  setQuantity(s.quantity);
+  UI.view.yaw = s.yaw;
+  UI.view.pitch = s.pitch;
+  UI.view.zoom = s.zoom;
+  if (s.rot && !UI.reducedMotion) playRot();
+  else { rotUpdateBtn(); syncURL(); }
+  requestDraw();
+  return getScene();
+}
+
+/* Deterministic capture hook: draw the frame the current scene would show
+ * after ms of auto-rotation — synchronously, no rAF, a pure function of
+ * (scene, ms). The base yaw is left untouched (no folding), so repeated
+ * calls at any ms sequence are reproducible; any live rotation offset is
+ * discarded. Heatmap scenes render identically for every ms. */
+function renderAt(ms) {
+  if (UI.rot.raf != null) {
+    cancelAnimationFrame(UI.rot.raf);
+    UI.rot.raf = null;
+  }
+  UI.rot.playing = false;
+  UI.rot.lastTs = null;
+  UI.rot.virtualMs = Number(ms) || 0;
+  rotUpdateBtn();
+  if (UI.state.view === "heat") drawHeat();
+  else if (UI.state.view === "4d") draw4D();
+  else drawCloud();
+  drawFilemap();
+}
+
+/* ---------------- tour (hand-advanced presentation) ---------------- */
+function tourShow(i) {
+  UI.tourIdx = ((i % TOUR.length) + TOUR.length) % TOUR.length;
+  const t = TOUR[UI.tourIdx];
+  applyScene(t.scene);
+  byId("tourPos").textContent =
+    "scene " + (UI.tourIdx + 1) + "/" + TOUR.length;
+  byId("tourCap").textContent = t.caption;
+}
+
+function tourStart() {
+  pauseSteps();               /* the tour owns the scene while it is open */
+  UI.tourOn = true;
+  byId("tourBar").hidden = false;
+  byId("btnTour").setAttribute("aria-pressed", "true");
+  tourShow(UI.tourIdx);
+}
+
+function tourStop() {
+  UI.tourOn = false;
+  byId("tourBar").hidden = true;
+  byId("btnTour").setAttribute("aria-pressed", "false");
+}
+
+function toggleTour() { if (UI.tourOn) tourStop(); else tourStart(); }
+
+function hoverCell(cell, ev) {
+  const tip = byId("tip");
+  UI.hover = cell;
+  if (!cell) {
+    tip.style.display = "none";
+    refreshText();
+    requestDraw();
+    return;
+  }
+  const html = cellReadout(cell.r, cell.c);
+  byId("insStage").innerHTML = html;
+  if (ev) {
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    const tw = 460;
+    tip.style.left = Math.min(ev.clientX + 14, innerWidth - tw) + "px";
+    tip.style.top = (ev.clientY + 12) + "px";
+  }
+  requestDraw();
+}
+
+function attachHeatEvents() {
+  const cv = byId("heat");
+  cv.addEventListener("mousemove", (e) => {
+    const cell = heatCellAt(e);
+    hoverCell(cell, e);
+  });
+  cv.addEventListener("mouseleave", () => hoverCell(null, null));
+  cv.addEventListener("keydown", (e) => {
+    const def = curDef();
+    let { r, c } = UI.hover || { r: 0, c: 0 };
+    let used = true;
+    if (e.key === "ArrowLeft") c = Math.max(0, c - 1);
+    else if (e.key === "ArrowRight") c = Math.min(def.cols - 1, c + 1);
+    else if (e.key === "ArrowUp") r = Math.max(0, r - 1);
+    else if (e.key === "ArrowDown") r = Math.min(def.rows - 1, r + 1);
+    else used = false;
+    if (used) { e.preventDefault(); hoverCell({ r, c }, null); }
+  });
+}
+
+function attachFileEvents() {
+  const cv = byId("filemap"), tip = byId("tip");
+  cv.addEventListener("mousemove", (e) => {
+    const sp = fileSpanAt(e);
+    UI.fileHover = sp;
+    if (!sp) { tip.style.display = "none"; requestDraw(); return; }
+    const html = fileReadout(sp);
+    byId("insFile").innerHTML = html;
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    const tw = 460;
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - tw) + "px";
+    tip.style.top = (e.clientY + 12) + "px";
+    requestDraw();
+  });
+  cv.addEventListener("mouseleave", () => {
+    UI.fileHover = null;
+    tip.style.display = "none";
+    requestDraw();
+  });
+  cv.addEventListener("click", (e) => {
+    const sp = fileSpanAt(e);
+    if (sp && sp.kind === "tensor") {
+      const def = TENSOR_DEFS.find((d) => d.mgw === sp.tensor.name);
+      if (def) setTensor(def.key);
+    }
+  });
+}
+
+/* Focus moves into the dialog on open and back to where it was on close
+ * (so e.g. "?" from the stage returns orbit keys to the stage). */
+function toggleHelp(open) {
+  if (open === UI.helpOpen) return;
+  UI.helpOpen = open;
+  byId("helpOverlay").classList.toggle("open", open);
+  if (open) {
+    UI.helpReturnFocus = document.activeElement;
+    byId("helpBox").focus();
+  } else if (UI.helpReturnFocus && UI.helpReturnFocus.focus) {
+    UI.helpReturnFocus.focus();
+    UI.helpReturnFocus = null;
+  } else {
+    byId("helpBtn").focus();
+  }
+}
+
+function attachGlobalKeys() {
+  document.addEventListener("keydown", (e) => {
+    const tag = e.target && e.target.tagName;
+    if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA") return;
+    if (UI.helpOpen) {
+      if (e.key === "Escape" || e.key === "?") { toggleHelp(false); e.preventDefault(); }
+      return;
+    }
+    /* content switches keep the play state; only camera-grabbing
+       interactions (and the heatmap, via setView) pause the rotation */
+    switch (e.key) {
+      case "1": setView("cloud"); break;
+      case "2": setView("heat"); break;
+      case "3": setView("4d"); break;
+      case "w": case "W": setQuantity("weight"); break;
+      case "c": case "C": setQuantity("contrib"); break;
+      case "r": case "R": resetView(); break;
+      case "p": case "P": toggleRot(); break;
+      case "t": case "T": toggleTour(); break;
+      case "n": case "N": if (!UI.tourOn) return; tourShow(UI.tourIdx + 1); break;
+      case "b": case "B": if (!UI.tourOn) return; tourShow(UI.tourIdx - 1); break;
+      case "Escape": if (!UI.tourOn) return; tourStop(); break;
+      case "?": toggleHelp(true); break;
+      default: return;
+    }
+    e.preventDefault();
+  });
+}
+
+/* ---------------- select population ---------------- */
+function rebuildStepSel() {
+  const s = TRACE.samples[UI.state.sample];
+  const sel = byId("stepSel");
+  sel.innerHTML = "";
+  for (let i = 0; i < s.steps.length; i++) {
+    const o = document.createElement("option");
+    o.value = String(i);
+    o.textContent = stepChipText(s, i);
+    sel.appendChild(o);
+  }
+  sel.value = String(UI.state.step);
+}
+
+/* ============================ init ============================ */
+function init() {
+  let r;
+  try {
+    r = runChecks();
+  } catch (err) {
+    const b = document.getElementById("selfBadge");
+    b.className = "badge fail";
+    b.textContent = "self-check: FAILED — " + err.message;
+    throw err;
+  }
+  UI = {
+    model: r.model,
+    spans: fileSpans(r.model.parsed),
+    state: { tensor: DEFAULT_TENSOR, view: "cloud", quantity: "weight",
+             sample: DEFAULT_SAMPLE, step: DEFAULT_STEP },
+    view: { yaw: DEFAULT_VIEW.yaw, pitch: DEFAULT_VIEW.pitch,
+            zoom: DEFAULT_VIEW.zoom },
+    rot: { playing: false, virtualMs: 0, lastTs: null, raf: null },
+    stepPlay: { playing: false, lastTs: null, raf: null },
+    reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
+    noURLSync: false, tourOn: false, tourIdx: 0,
+    contribCache: new Map(),
+    t4Cache: new Map(),
+    cloudPts: [],
+    hover: null, fileHover: null, helpOpen: false, helpReturnFocus: null,
+    heatCW: 8, heatCH: 8, rafPending: false,
+  };
+  const badge = byId("selfBadge");
+  badge.className = "badge pass";
+  badge.textContent = "self-check: " + r.checks + " ✓";
+  byId("footSha").textContent = SUMMARY.model_sha256;
+
+  const tSel = byId("tensorSel");
+  for (const def of TENSOR_DEFS) {
+    const o = document.createElement("option");
+    o.value = def.key;
+    o.textContent = def.label + (def.input ? "" : " (lookup)");
+    tSel.appendChild(o);
+  }
+  tSel.value = DEFAULT_TENSOR;
+  tSel.addEventListener("change", () => setTensor(tSel.value));
+
+  const sSel = byId("sampleSel");
+  TRACE.samples.forEach((s, i) => {
+    const o = document.createElement("option");
+    o.value = String(i);
+    o.textContent = "#" + i + " “" + s.text + "”";
+    sSel.appendChild(o);
+  });
+  sSel.value = String(DEFAULT_SAMPLE);
+  sSel.addEventListener("change", () =>
+    setSampleStep(Number(sSel.value), UI.state.step));
+  rebuildStepSel();
+  byId("stepSel").addEventListener("change", () =>
+    setSampleStep(UI.state.sample, Number(byId("stepSel").value)));
+
+  byId("btnCloud").addEventListener("click", () => setView("cloud"));
+  byId("btnHeat").addEventListener("click", () => setView("heat"));
+  byId("btn4D").addEventListener("click", () => setView("4d"));
+  byId("btnWeight").addEventListener("click", () => setQuantity("weight"));
+  byId("btnContrib").addEventListener("click", () => setQuantity("contrib"));
+  byId("btnReset").addEventListener("click", resetView);
+  byId("btnRot").addEventListener("click", toggleRot);
+  byId("btnStepPlay").addEventListener("click", toggleSteps);
+  stepPlayUpdateBtn();
+  byId("btnTour").addEventListener("click", toggleTour);
+  byId("tourNext").addEventListener("click", () => tourShow(UI.tourIdx + 1));
+  byId("tourPrev").addEventListener("click", () => tourShow(UI.tourIdx - 1));
+  byId("tourExit").addEventListener("click", tourStop);
+  byId("helpBtn").addEventListener("click", () => toggleHelp(!UI.helpOpen));
+  byId("helpClose").addEventListener("click", () => toggleHelp(false));
+
+  attachOrbit(byId("stage"));
+  attachHeatEvents();
+  attachFileEvents();
+  attachGlobalKeys();
+  addEventListener("resize", requestDraw);
+  window.addEventListener("scroll", () => {
+    byId("tip").style.display = "none";
+  }, { passive: true });
+
+  /* Boot from the deep link (or the defaults): one applyScene restores
+     tensor, view, quantity, sample, step, camera and rotation — identical
+     URLs render identical first frames. location.search wins; hash params
+     are accepted as a fallback for setups that strip queries. */
+  applyScene(parseScene(location.search || location.hash));
+
+  /* Scripted-capture hooks; contract documented in the help overlay. */
+  window.VIZ = {
+    ready: true,
+    getScene,
+    setScene: applyScene,
+    renderAt,
+    sceneURL() { return "weights.html?" + serializeScene(getScene()); },
+  };
+  dispatchEvent(new CustomEvent("viz-ready"));
+}
+
+if (IS_BROWSER) init(); else nodeSelfTest();
+</script>
+</body>
+</html>

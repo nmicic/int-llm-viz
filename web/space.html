@@ -1,0 +1,1766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>space — 62 vectors, one 32-D room</title>
+<!--
+  Copyright 2026 Nenad Mićić
+  SPDX-License-Identifier: Apache-2.0
+
+  space.html — the embedding-space page of int-llm-viz.
+  62 vectors (27 wte + 27 lm_head + 8 wpe) drawn in the one literal
+  32-dimensional residual stream they all live in. MODE A plots three
+  literal residual coordinates; MODES B/C plot derived PCA geometry
+  (basis from wte's exact integer scatter). Raw data stays BigInt-exact;
+  floats appear only as display geometry and are labeled as such.
+  Every 3-D view auto-rotates gently (one revolution per 48 s) unless
+  the user prefers reduced motion; grabbing a camera pauses it, content
+  toggles do not. Self-contained: model checkpoint, parser, theme and
+  geometry inlined.
+-->
+<style>
+__THEME_CSS__
+
+/* ---------- space.html page styles ---------- */
+.navpad { flex: 1; }
+.hidden { display: none !important; }
+
+.toolbar { margin: 10px 0; }
+.toolbar .grp {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  padding: 4px 8px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel);
+}
+.toolbar .grp .lbl { font: 11px var(--mono); color: var(--dim); }
+.swdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+         margin-right: 5px; vertical-align: -1px; }
+.swdot.ring { background: transparent !important; border: 2px solid; }
+.swdot.diam { border-radius: 1px; transform: rotate(45deg) scale(0.9); }
+
+.viz-grid { display: flex; gap: 12px; align-items: flex-start; }
+.viz-main { flex: 1 1 640px; min-width: 0; }
+.viz-side { flex: 0 0 350px; min-width: 0; }
+
+.banner {
+  font: 12px var(--mono); color: var(--dim);
+  border: 1px dashed var(--line); border-radius: 8px;
+  padding: 5px 10px; margin: 8px 0;
+}
+.banner b { color: var(--ink); font-weight: 600; }
+.banner.derived { border-color: #4c3f82; color: #d0bcff; }
+
+.axisbar { margin: 8px 0; }
+.axisbar select { min-width: 74px; }
+.dimstrip { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 8px; }
+.dimstrip button {
+  width: 24px; height: 22px; padding: 0; font-size: 10px;
+  border-radius: 5px; color: var(--dim);
+}
+.dimstrip button.onaxis {
+  color: #0b0e14; background: var(--gold); border-color: var(--gold);
+  font-weight: 700;
+}
+.armgrp button { min-width: 34px; }
+
+.stagewrap { position: relative; }
+canvas.stage3d {
+  display: block; width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px;
+  touch-action: none; cursor: grab;
+}
+canvas.stage3d:active { cursor: grabbing; }
+#stage { height: 540px; }
+
+.tetrad {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.tpanel .ptitle {
+  font: 11px var(--mono); color: var(--dim); margin: 0 0 4px 2px;
+}
+.tpanel .ptitle b { color: var(--ink); }
+.tpanel canvas { height: 280px; }
+
+.axis-readout {
+  font-size: 11.5px; color: var(--dim);
+  margin: 8px 0 0; line-height: 1.7;
+}
+.axis-readout .ax { color: var(--ink); }
+.axis-readout .tag {
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 0 7px; font-size: 10px; margin-left: 4px;
+}
+.axis-readout .tag.lit { color: #8ce99a; border-color: #2b6b43; }
+.axis-readout .tag.der { color: #d0bcff; border-color: #4c3f82; }
+.subnote { font: 11px var(--mono); color: var(--dim); margin: 6px 0; }
+
+/* ---------- inspector ---------- */
+.inspector h2 { margin: 0 0 6px; font-size: 15px; }
+.fam-glyph { font-size: 15px; }
+.sel-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.sel-head .big { font: 700 20px var(--mono); }
+.coordtable-wrap {
+  max-height: 230px; overflow: auto;
+  border: 1px solid var(--line); border-radius: 8px; margin: 8px 0;
+}
+table.coords { border-collapse: collapse; width: 100%; font: 10.5px var(--mono); }
+table.coords th, table.coords td {
+  text-align: right; padding: 1px 7px; white-space: nowrap;
+  border-bottom: 1px solid #1b2130;
+}
+table.coords th {
+  position: sticky; top: 0; background: var(--panel2); color: var(--dim);
+  font-weight: 400;
+}
+table.coords td.d { color: var(--dim); }
+table.coords tr.onax td { background: #2a2410; }
+.pairbox { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
+.pairbox .exact {
+  font: 10.5px var(--mono); overflow-wrap: break-word;
+  color: var(--ink); margin: 2px 0 8px;
+}
+.pairbox .k { color: var(--dim); font: 11px var(--mono); }
+.nearlist { list-style: none; margin: 4px 0 0; padding: 0; }
+.nearlist li { margin: 2px 0; }
+.nearlist button {
+  width: 100%; text-align: left; display: flex; gap: 8px; align-items: baseline;
+  background: var(--panel2); border-color: var(--line); padding: 3px 8px;
+}
+.nearlist .cosv { margin-left: auto; color: var(--dim); }
+
+.veclist {
+  max-height: 300px; overflow: auto; display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 2px;
+}
+.veclist button {
+  min-width: 34px; padding: 2px 6px; font-size: 12px;
+  background: var(--panel2);
+}
+.veclist button.sel { outline: 2px solid var(--gold); }
+.veclist button.cmp { outline: 2px dashed var(--gold); }
+.veclist .fam-b { flex-basis: 100%; font: 10px var(--mono); color: var(--dim);
+                  margin-top: 4px; }
+
+/* ---------- pair matrix ---------- */
+.matrix-wrap { overflow: auto; }
+#matrix {
+  display: block; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px;
+  touch-action: none;
+}
+#matrixReadout {
+  font-size: 11px; min-height: 3.2em; margin-top: 8px; color: var(--ink);
+  overflow-wrap: break-word;
+}
+#matrixReadout .k { color: var(--dim); }
+
+.help-box h3 { color: var(--ink); margin-top: 14px; }
+.help-box table { border-collapse: collapse; font-size: 12.5px; }
+.help-box td { padding: 2px 10px 2px 0; vertical-align: top; }
+.help-box .note { color: var(--dim); font-size: 12px; }
+
+footer .mono { overflow-wrap: break-word; }
+
+@media (max-width: 980px) {
+  .viz-grid { flex-direction: column; }
+  .viz-side { flex: 1 1 auto; width: 100%; }
+  #stage { height: 420px; }
+}
+@media (max-width: 560px) {
+  .tetrad { grid-template-columns: 1fr; }
+  #stage { height: 320px; }
+  .tpanel canvas { height: 240px; }
+}
+</style>
+</head>
+<body>
+<main>
+<!--UNBUILT-NOTICE--><div style="background:#3a1420;border:1px solid #7a2b3b;color:#ffd6d6;font:14px/1.6 ui-monospace,Menlo,Consolas,monospace;padding:12px 16px;border-radius:10px;margin:12px 0;max-width:72ch">
+You are looking at the <b>unbuilt source template</b> (web/space.html).
+Its data placeholders are not filled in, so no checkpoint, styling, or
+visualization can appear here. Open the built page
+<a href="../site/space.html" style="color:#ffd166">site/space.html</a>
+instead &mdash; it is committed; <b>make</b> regenerates it.
+</div><!--/UNBUILT-NOTICE-->
+<nav class="topnav mono">
+  <a href="index.html">index</a>
+  <a href="atlas.html">atlas</a>
+  <a href="trace.html">trace</a>
+  <a href="space.html" class="here" aria-current="page">space</a>
+  <a href="weights.html">weights</a>
+  <span class="navpad"></span>
+  <span id="checkBadge" class="badge info">self-check: running…</span>
+  <button id="helpBtn" aria-haspopup="dialog" title="help (?)">?</button>
+</nav>
+
+<h1>Embedding space</h1>
+<p class="sub">62 vectors — 27 token embeddings (wte), 27 unembedding rows (lm_head),
+8 position vectors (wpe) — drawn inside the one 32-dimensional residual stream
+they all literally occupy.</p>
+
+<section class="card">
+  <p style="margin:4px 0">Why one plot is a <em>literal</em> statement, not an
+  analogy: during inference each <b>wte</b> row and each <b>wpe</b> row is
+  <b>added</b> into the model&#8217;s 32-dimensional residual stream, and each
+  <b>lm_head</b> row is <b>dotted</b> with the final stream vector to produce
+  that token&#8217;s logit. All three tensors address the same 32 coordinates
+  of the same vector space, so they are plotted in one shared room.
+  Coordinates are Q16.48 fixed point: value = raw / 2<sup>48</sup>, kept
+  BigInt-exact everywhere; floats appear only as screen geometry.</p>
+  <div class="legend" style="margin-top:6px">
+    <span><span class="sw" style="background:#74c0fc;border-radius:50%"></span>wte — filled circle (added at position 0..T)</span>
+    <span><span class="sw" style="background:transparent;border:2px solid #f783ac;border-radius:50%"></span>lm_head — ring (dotted with final stream)</span>
+    <span><span class="sw" style="background:#ffd43b;transform:rotate(45deg)"></span>wpe — diamond (added by position)</span>
+    <span><span class="sw" style="background:#ffd166;border-radius:50%"></span>gold ring = selection (dashed = compare)</span>
+  </div>
+</section>
+
+<div class="row toolbar">
+  <div class="grp" role="group" aria-label="view mode">
+    <span class="lbl">mode</span>
+    <button id="modeA" class="on" aria-pressed="true" title="key 1">1 literal axes</button>
+    <button id="modeB" aria-pressed="false" title="key 2">2 derived PCA</button>
+    <button id="modeC" aria-pressed="false" title="key 3">3 PC tetrad</button>
+  </div>
+  <div class="grp" role="group" aria-label="families">
+    <span class="lbl">families</span>
+    <button id="famWte" class="on" aria-pressed="true" title="key T"><span class="swdot" style="background:#74c0fc"></span>wte 27</button>
+    <button id="famLmh" class="on" aria-pressed="true" title="key U"><span class="swdot ring" style="border-color:#f783ac"></span>lm_head 27</button>
+    <button id="famWpe" class="on" aria-pressed="true" title="key P"><span class="swdot diam" style="background:#ffd43b"></span>wpe 8</button>
+  </div>
+  <div class="grp">
+    <button id="labelsBtn" class="on" aria-pressed="true" title="key L">labels: all</button>
+    <button id="polyBtn" class="on" aria-pressed="true" title="key O">wpe polyline</button>
+    <button id="matrixBtn" aria-pressed="true" class="on" title="key D">pair matrix</button>
+    <button id="rotBtn" aria-pressed="false"
+      title="gently orbit the camera, one revolution per 48 s; grabbing a camera pauses it (A)">auto-rotate</button>
+    <button id="walkBtn" aria-pressed="false"
+      title="walk the selection through all 62 vectors, one per second (gold ring + inspector follow along)">&#9656; walk</button>
+  </div>
+</div>
+
+<div class="viz-grid">
+  <div class="viz-main">
+    <div id="modeBanner" class="banner"></div>
+
+    <div id="axisControls" class="axisbar card" style="padding:8px 12px">
+      <div class="row">
+        <label class="mono" style="font-size:12px">x <select id="dimX" aria-label="x axis residual dimension"></select></label>
+        <label class="mono" style="font-size:12px">y <select id="dimY" aria-label="y axis residual dimension"></select></label>
+        <label class="mono" style="font-size:12px">z <select id="dimZ" aria-label="z axis residual dimension"></select></label>
+        <span class="lbl mono" style="color:var(--dim);font-size:11px">assign strip clicks to:</span>
+        <span class="armgrp" role="group" aria-label="armed axis">
+          <button id="armX" class="on" aria-pressed="true">x</button>
+          <button id="armY" aria-pressed="false">y</button>
+          <button id="armZ" aria-pressed="false">z</button>
+        </span>
+      </div>
+      <div id="dimStrip" class="dimstrip" role="group"
+           aria-label="32 residual dimensions; highlighted = currently on axis"></div>
+    </div>
+
+    <div id="derivedNote" class="banner derived hidden">
+      derived axes — basis from <b>wte only</b>: exact integer scatter
+      G = &#8721; (27&#183;x&#7522; &#8722; S)(27&#183;x&#7522; &#8722; S)&#7511; over the 27 wte rows;
+      eigenvectors are IEEE-754 float64 <b>display geometry</b>.
+      lm_head and wpe are <b>projected onto this wte-derived basis</b>.
+    </div>
+
+    <div id="stageWrap" class="stagewrap">
+      <canvas id="stage" class="stage3d" tabindex="0"
+        aria-label="3D scatter of the 62 vectors. Drag or arrow keys orbit, plus and minus zoom, R resets."></canvas>
+    </div>
+
+    <div id="tetradBar" class="row toolbar hidden" style="margin:8px 0 6px">
+      <div class="grp" role="group" aria-label="tetrad camera">
+        <span class="lbl">camera</span>
+        <button id="linkBtn" class="on" aria-pressed="true" title="key K"></button>
+      </div>
+    </div>
+
+    <div id="tetradWrap" class="tetrad hidden">
+      <div class="tpanel"><p class="ptitle" id="pt0"></p><canvas id="tp0" class="stage3d" tabindex="0" aria-label="tetrad panel 1 of 4. Drag or arrow keys orbit; while cameras are linked all four panels turn together."></canvas></div>
+      <div class="tpanel"><p class="ptitle" id="pt1"></p><canvas id="tp1" class="stage3d" tabindex="0" aria-label="tetrad panel 2 of 4. Drag or arrow keys orbit; while cameras are linked all four panels turn together."></canvas></div>
+      <div class="tpanel"><p class="ptitle" id="pt2"></p><canvas id="tp2" class="stage3d" tabindex="0" aria-label="tetrad panel 3 of 4. Drag or arrow keys orbit; while cameras are linked all four panels turn together."></canvas></div>
+      <div class="tpanel"><p class="ptitle" id="pt3"></p><canvas id="tp3" class="stage3d" tabindex="0" aria-label="tetrad panel 4 of 4. Drag or arrow keys orbit; while cameras are linked all four panels turn together."></canvas></div>
+    </div>
+
+    <div id="axisReadout" class="axis-readout mono"></div>
+    <div id="polyNote" class="subnote">wpe polyline: the line connects consecutive
+      position indices p0&#8594;p1&#8594;&#8230;&#8594;p7 (an ordered sequence, nothing more).</div>
+  </div>
+
+  <aside class="viz-side">
+    <div class="card inspector" id="inspector">
+      <h2>inspector</h2>
+      <div id="inspBody"><p class="subnote">click a mark (or a chip below) to
+      select it — gold ring in every view. <b>Shift-click</b> sets the compare
+      vector (dashed gold). All readouts here are exact integers unless
+      labeled as display rounding.</p></div>
+    </div>
+    <div class="card" id="listCard">
+      <h3 style="margin-top:0">all 62 vectors (Tab / arrows, Enter = select,
+        Shift-Enter = compare)</h3>
+      <div id="vecList" class="veclist"></div>
+    </div>
+  </aside>
+</div>
+
+<section class="card" id="matrixCard">
+  <h2 style="margin-top:0">pair matrix — 62 &#215; 62 cosines
+    <span class="badge info">exact readouts, display-float colors</span></h2>
+  <p class="subnote">family-ordered (wte, lm_head, wpe) with separator lines and
+    family-colored strips. cell color: cos &lt; 0 &#8594; blue #4dabf7,
+    cos &gt; 0 &#8594; orange #ffa94d, 0 &#8594; neutral — the color is a
+    display float; hover or arrow to a cell for the exact integer readout.
+    click a cell to select the pair.</p>
+  <div class="matrix-wrap">
+    <canvas id="matrix" tabindex="0"
+      aria-label="62 by 62 cosine matrix. Arrow keys move the active cell, Enter selects the pair."></canvas>
+  </div>
+  <div id="matrixReadout"><span class="k">hover or arrow to a cell&#8230;</span></div>
+</section>
+
+<div class="help-overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-label="help">
+  <div class="help-box" id="helpBox" tabindex="-1">
+    <h2>space — help</h2>
+    <p>62 vectors from the committed checkpoint share one literal
+    32-dimensional room: <b>wte</b> rows (tokens a..z plus &#8960; = BOS) and
+    <b>wpe</b> rows (positions p0..p7) are <b>added</b> into the residual
+    stream; <b>lm_head</b> rows are <b>dotted</b> with the final stream vector
+    to make logits. Same 32 coordinates, same space — that is the whole
+    justification, stated literally. This page makes no semantic claims;
+    it shows exact quantities and labeled display geometry only.</p>
+
+    <h3>literal vs derived axes</h3>
+    <p><span class="tag" style="color:#8ce99a">MODE 1</span> plots three of the
+    32 <b>literal</b> stored coordinates (a banner counts the 29 dims not
+    drawn; solid axis lines, &#8220;literal, exact&#8221; tags).
+    <span class="tag" style="color:#d0bcff">MODES 2/3</span> plot <b>derived</b>
+    PCA geometry: the basis comes from wte&#8217;s exact integer scatter, its
+    eigenvectors are float64 display geometry, and lm_head/wpe are projected
+    onto that wte-derived basis (dashed axis lines, &#8220;derived&#8221; tags,
+    violet provenance banner). Mode 3 shows four 3-PC subsets of PC1..PC4;
+    each panel names the PC it omits and that PC&#8217;s share of wte variance.</p>
+
+    <h3>encodings</h3>
+    <table>
+      <tr><td class="mono">#74c0fc filled circle</td><td>wte row (token embedding)</td></tr>
+      <tr><td class="mono">#f783ac ring</td><td>lm_head row (unembedding)</td></tr>
+      <tr><td class="mono">#ffd43b diamond</td><td>wpe row (position); optional polyline joins p0&#8594;p7 in index order</td></tr>
+      <tr><td class="mono">text label</td><td>every mark carries its literal label: a..z, &#8960; (BOS), p0..p7</td></tr>
+      <tr><td class="mono">mark size / brightness</td><td>3D depth (nearer = larger, brighter) — display geometry</td></tr>
+      <tr><td class="mono">gold ring / dashed gold</td><td>selection / compare, mirrored in every view and panel</td></tr>
+      <tr><td class="mono">matrix cell color</td><td>display-float cosine: blue negative, orange positive, neutral zero</td></tr>
+    </table>
+
+    <h3>exactness contract</h3>
+    <p class="note">Exact (BigInt, never floats): raw Q16.48 coordinates, hex
+    and decimal readouts, dot products (integers at Q32.96 scale), squared
+    norms, the recomputed wte scatter G, and the <b>ordering</b> of the
+    nearest-by-cosine list (sign classes + cross-multiplied comparisons).
+    Display-only floats (labeled in place): screen projections, PCA
+    eigenvectors/coordinates, tick values, matrix cell colors, and every
+    rounded cosine numeral. The startup self-check re-parses the embedded
+    checkpoint, re-hashes all 9 tensors, and re-derives G in this browser.</p>
+
+    <h3>keyboard</h3>
+    <table>
+      <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>mode: literal axes / derived PCA / PC tetrad</td></tr>
+      <tr><td><kbd>T</kbd> <kbd>U</kbd> <kbd>P</kbd></td><td>toggle families wte / lm_head / wpe</td></tr>
+      <tr><td><kbd>L</kbd></td><td>label density: all &#8596; selection only</td></tr>
+      <tr><td><kbd>O</kbd></td><td>wpe polyline on/off</td></tr>
+      <tr><td><kbd>D</kbd></td><td>pair matrix panel</td></tr>
+      <tr><td><kbd>K</kbd></td><td>tetrad: link &#8596; unlink the four cameras (linked = orbit one panel, all four turn)</td></tr>
+      <tr><td><kbd>A</kbd></td><td>auto-rotate on/off — a gentle orbit, one revolution per 48 s; grabbing a camera (drag, wheel, orbit keys, reset) pauses it, mode/family/matrix switches do not</td></tr>
+      <tr><td>walk</td><td>(button) cycle the selection through all 62 vectors, one per second — gold ring and inspector follow; composes with auto-rotate; never starts by itself</td></tr>
+      <tr><td><kbd>&#8592;&#8593;&#8594;&#8595;</kbd></td><td>orbit the focused canvas (yaw/pitch; linked tetrad: all four together); in the matrix: move the active cell</td></tr>
+      <tr><td><kbd>+</kbd> <kbd>&#8722;</kbd></td><td>zoom the focused canvas (linked tetrad: all four)</td></tr>
+      <tr><td><kbd>R</kbd></td><td>reset the focused canvas view (linked tetrad: the shared view)</td></tr>
+      <tr><td><kbd>Tab</kbd>, <kbd>Enter</kbd>, <kbd>Shift-Enter</kbd></td><td>walk the vector chips; select / set compare</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>close this overlay (or the matrix panel)</td></tr>
+      <tr><td><kbd>?</kbd></td><td>toggle this overlay</td></tr>
+    </table>
+    <p class="note">mode-1 extras: x/y/z selects pick any of the 32 residual
+    dims; the strip assigns a clicked dim to the armed axis.</p>
+    <p><button id="helpClose">close (Esc)</button></p>
+  </div>
+</div>
+
+<div class="tip" id="tip" aria-hidden="true"></div>
+
+<footer>
+  <div class="mono">model sha256 <span id="footSha"></span></div>
+  <div>geometry derived deterministically from the committed checkpoint;
+  exact scatter re-verified in this browser (see self-check badge).</div>
+  <div>Copyright 2026 Nenad Mi&#263;i&#263; — Apache-2.0. Model checkpoint:
+  third_party/int-llm (Apache-2.0). Self-contained page: no network use.</div>
+</footer>
+</main>
+<script>
+__MGW_JS__
+</script>
+<script>
+"use strict";
+/* ================= embedded data (build_site.py tokens) ================= */
+const MGW_B64 = "__MGW_B64__";
+const GEOMETRY = __GEOMETRY_JSON__;
+const SUMMARY = __SUMMARY_JSON__;
+
+const IS_BROWSER = typeof document !== "undefined";
+
+/* ============================ pure layer ============================
+ * Everything above init() runs identically under Node (tools/page_check.js)
+ * and in the browser. No DOM, no timers, no randomness, no clock. */
+
+const FAM_DEFS = [
+  { key: "wte", tensor: "wte",     color: "#74c0fc", shape: "circle",
+    long: "token embedding (added into the stream)" },
+  { key: "lmh", tensor: "lm_head", color: "#f783ac", shape: "ring",
+    long: "unembedding row (dotted with the final stream)" },
+  { key: "wpe", tensor: "wpe",     color: "#ffd43b", shape: "diamond",
+    long: "position embedding (added into the stream)" },
+];
+
+/* 62 vector descriptors. `raw` is the exact BigInt64Array row (LITERAL
+ * data); `floats` is its float64 image, display geometry only (the build
+ * pipeline asserts |raw| < 2^53 so the conversion itself is exact). */
+function buildVectors(model) {
+  const dims = model.config.hidden_dim;
+  const out = [];
+  for (const fam of FAM_DEFS) {
+    const t = model.byName.get(fam.tensor);
+    if (!t) throw new Error("missing tensor " + fam.tensor);
+    for (let r = 0; r < t.rows; r++) {
+      const raw = t.raw.subarray(r * dims, (r + 1) * dims);
+      const floats = new Float64Array(dims);            /* display-only */
+      for (let c = 0; c < dims; c++) floats[c] = Q48.toNumber(raw[c]);
+      const label = fam.key === "wpe" ? "p" + r
+        : (r < model.uchars.length ? model.uchars[r] : "⌀");
+      out.push({ fam: fam.key, famDef: fam, idx: r, label, raw, floats });
+    }
+  }
+  return out;
+}
+
+/* EXACT integer scatter of the wte rows, mirroring tools/derive_geometry.py:
+ * c_i = 27*x_i - S (S = column sums), G = sum_i c_i c_i^T. All BigInt. */
+function computeScatterExact(t) {
+  const R = t.rows, C = t.cols, V = BigInt(R);
+  const S = new Array(C).fill(0n);
+  for (let r = 0; r < R; r++)
+    for (let c = 0; c < C; c++) S[c] += t.raw[r * C + c];
+  const G = [];
+  for (let a = 0; a < C; a++) G.push(new Array(C).fill(0n));
+  const cent = new Array(C);
+  for (let r = 0; r < R; r++) {
+    for (let c = 0; c < C; c++) cent[c] = V * t.raw[r * C + c] - S[c];
+    for (let a = 0; a < C; a++) {
+      const ca = cent[a];
+      if (ca === 0n) continue;
+      const Ga = G[a];
+      for (let b = 0; b < C; b++) Ga[b] += ca * cent[b];
+    }
+  }
+  return G;
+}
+
+/* All pairwise EXACT dot products (BigInt at Q32.96 scale) of the 62 rows.
+ * dots[i*n+j] = <v_i, v_j>; norms[i] = <v_i, v_i>. */
+function computeAllDots(vectors) {
+  const n = vectors.length, dims = vectors[0].raw.length;
+  const dots = new Array(n * n);
+  for (let i = 0; i < n; i++) {
+    for (let j = i; j < n; j++) {
+      const d = dotExact(vectors[i].raw, vectors[j].raw, 0, 0, dims);
+      dots[i * n + j] = d;
+      dots[j * n + i] = d;
+    }
+  }
+  const norms = new Array(n);
+  for (let i = 0; i < n; i++) norms[i] = dots[i * n + i];
+  return { n, dots, norms };
+}
+
+/* EXACT cosine ordering. cosA = dotA/sqrt(Nx*nA), cosB = dotB/sqrt(Nx*nB)
+ * share the anchor norm Nx, which cancels. Compare by sign class first,
+ * then by cross-multiplied squares — BigInt only, no float touches the
+ * ordering. Returns negative/0/positive like a comparator (A vs B). */
+function cosCmpExact(dotA, nA, dotB, nB) {
+  const sA = dotA > 0n ? 1 : (dotA < 0n ? -1 : 0);
+  const sB = dotB > 0n ? 1 : (dotB < 0n ? -1 : 0);
+  if (sA !== sB) return sA - sB;
+  if (sA === 0) return 0;
+  const lhs = dotA * dotA * nB, rhs = dotB * dotB * nA;
+  if (lhs === rhs) return 0;
+  const bigger = lhs > rhs ? 1 : -1;      /* larger |cos| */
+  return sA > 0 ? bigger : -bigger;
+}
+
+/* cos(a,b) === 1 exactly  <=>  dot > 0 and dot^2 === |a|^2 * |b|^2. */
+function isCosExactlyOne(dot, nA, nB) {
+  return dot > 0n && dot * dot === nA * nB;
+}
+
+/* Top-k neighbours of `sel` by cosine, EXACT ordering (ties by index). */
+function nearestByCosine(pair, sel, k) {
+  const { n, dots, norms } = pair;
+  const cand = [];
+  for (let j = 0; j < n; j++) if (j !== sel) cand.push(j);
+  cand.sort((a, b) => {
+    const c = cosCmpExact(dots[sel * n + b], norms[b],
+                          dots[sel * n + a], norms[a]);
+    return c !== 0 ? c : a - b;
+  });
+  return cand.slice(0, k);
+}
+
+/* Display-only float cosine (the page labels every use as rounding). */
+function displayCosine(dot, nA, nB) {
+  return Number(dot) / Math.sqrt(Number(nA) * Number(nB));
+}
+
+const fixed96 = (raw) => Q48.fixedToDecimalString(raw, 96);
+
+/* Derived PCA coordinates: float64 projection of the float64 image of each
+ * row onto GEOMETRY.components (display geometry; basis from wte only). */
+function computePcaCoords(vectors, components) {
+  const K = components.length;
+  for (const v of vectors) {
+    const pc = new Float64Array(K);
+    for (let k = 0; k < K; k++) {
+      let s = 0;
+      const comp = components[k];
+      for (let c = 0; c < v.floats.length; c++) s += v.floats[c] * comp[c];
+      pc[k] = s;
+    }
+    v.pc = pc;                                          /* display-only */
+  }
+}
+
+/* -------- hand-rolled 3D (display geometry) -------- */
+/* Pure pinhole projection: yaw about the vertical axis, then pitch about
+ * the horizontal axis, then perspective divide. Deterministic: same input
+ * always yields the identical output object. */
+const PERSP = 3.4;
+function project3(x, y, z, yaw, pitch, zoom) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const x1 = cy * x + sy * z;
+  const z1 = -sy * x + cy * z;
+  const y2 = cp * y - sp * z1;
+  const z2 = sp * y + cp * z1;          /* larger z2 = nearer the camera */
+  const f = PERSP / (PERSP - z2);
+  return { x: x1 * f * zoom, y: -y2 * f * zoom, depth: z2, f };
+}
+
+/* Tetrad camera link. Linked = the four panels literally share ONE view
+ * object (one camera, four axis triples), so orbiting or zooming any
+ * panel turns all four together — the "four 3-D shadows of one 4-D
+ * cloud" effect. Unlink clones the current orientation into per-panel
+ * view objects so each panel can be orbited independently. */
+function linkViews(stages, src) {
+  const shared = { yaw: src.view.yaw, pitch: src.view.pitch,
+                   zoom: src.view.zoom };
+  for (const st of stages) st.view = shared;
+  return shared;
+}
+function unlinkViews(stages) {
+  for (const st of stages)
+    st.view = { yaw: st.view.yaw, pitch: st.view.pitch, zoom: st.view.zoom };
+}
+
+/* Gentle auto-rotation clock: one revolution per ROT_REV_MS. yawAtTime
+ * is THE clock-to-camera mapping — a view renders at
+ * yawAtTime(view.yaw, virtualMs), and pausing folds that rendered yaw
+ * back into view.yaw (wrapped), so the camera never jumps. Pure, so the
+ * Node self-check exercises it; the rAF loop lives in the browser layer. */
+const ROT_REV_MS = 48000;
+function yawAtTime(baseYaw, ms) {
+  return baseYaw + (Math.PI * 2 / ROT_REV_MS) * ms;
+}
+/* Wrap into (-pi, pi], round to 1e-4, and clamp so the rounding cannot
+ * escape the wrap branch: the result is its own fixed point. */
+function wrapYaw(y) {
+  const TAU = Math.PI * 2;
+  let w = ((y % TAU) + TAU) % TAU;
+  if (w > Math.PI) w -= TAU;
+  w = Math.round(w * 10000) / 10000;
+  return Math.max(-3.1415, Math.min(3.1415, w));
+}
+
+/* Max |coordinate| over all vectors for a 3-axis getter -> view scale. */
+function computeExtent(vectors, getter) {
+  let m = 0;
+  for (const v of vectors) {
+    const p = getter(v);
+    for (let a = 0; a < 3; a++) { const t = Math.abs(p[a]); if (t > m) m = t; }
+  }
+  return m > 0 ? m : 1;
+}
+
+/* Round tick step: largest of 1/2/5 * 10^k giving 2..5 ticks per side. */
+function niceStep(maxAbs) {
+  const raw = maxAbs / 2.5;
+  const p = Math.pow(10, Math.floor(Math.log10(raw)));
+  for (const m of [5, 2, 1]) if (m * p <= raw) return m * p;
+  return p;
+}
+function tickValues(maxAbs) {
+  const st = niceStep(maxAbs), out = [];
+  for (let v = st; v <= maxAbs * 1.0001; v += st) { out.push(v); out.push(-v); }
+  return out;
+}
+
+/* Format a display float compactly (ticks, cosines). */
+function fmtF(x, d) {
+  const s = x.toFixed(d !== undefined ? d : 3);
+  return s === "-0" || /^-0\.0*$/.test(s) ? s.slice(1) : s;
+}
+
+/* ============================ self-test ============================
+ * Runs under Node via tools/page_check.js AND at browser startup.
+ * Throws on the first failure; returns the shared exact state. */
+function runChecks() {
+  let checks = 0;
+  const ok = (cond, msg) => {
+    if (!cond) throw new Error("self-check: " + msg);
+    checks++;
+  };
+
+  /* 1. byte-exact parse of the embedded checkpoint */
+  const model = parseMGW(b64ToBytes(MGW_B64));
+  ok(model.numWeights === SUMMARY.num_params,
+     "weight count matches SUMMARY.num_params");
+  ok(model.uchars === SUMMARY.uchars, "tokenizer uchars match SUMMARY");
+  ok(model.config.hidden_dim === GEOMETRY.n_cols,
+     "hidden_dim matches GEOMETRY.n_cols");
+
+  /* 2. FNV-1a 64 of all 9 weight tensors === the C loader's checksums */
+  const fnvNames = Object.keys(SUMMARY.tensor_fnv1a64).sort();
+  ok(fnvNames.length === 9, "SUMMARY lists 9 weight tensors");
+  for (const nm of fnvNames) {
+    const t = model.byName.get(nm);
+    ok(!!t, "tensor present: " + nm);
+    ok(fnv1a64(t.raw).toString() === SUMMARY.tensor_fnv1a64[nm],
+       "fnv1a64(" + nm + ") matches C harness");
+  }
+
+  /* 3. provenance chain: geometry was derived from this same checkpoint */
+  ok(GEOMETRY.provenance.model_sha256 === SUMMARY.model_sha256,
+     "GEOMETRY provenance sha256 === SUMMARY sha256");
+
+  /* 4. the 62 vectors and their shapes */
+  const vectors = buildVectors(model);
+  ok(vectors.length === 62, "62 vectors (27 wte + 27 lm_head + 8 wpe)");
+  const wte = model.byName.get("wte");
+  ok(wte.rows === 27 && wte.cols === 32, "wte is 27x32");
+  const lmh = model.byName.get("lm_head");
+  ok(lmh.rows === 27 && lmh.cols === 32, "lm_head is 27x32");
+  const wpeT = model.byName.get("wpe");
+  ok(wpeT.rows === 8 && wpeT.cols === 32, "wpe is 8x32");
+
+  /* 5. recompute the EXACT integer scatter G from the embedded wte rows
+   * and compare every entry to the committed strings — this ties the
+   * derived basis to the embedded model inside the page itself. */
+  const G = computeScatterExact(wte);
+  ok(GEOMETRY.scatter_exact.length === 32, "scatter_exact is 32x32");
+  for (let a = 0; a < 32; a++)
+    for (let b = 0; b < 32; b++)
+      ok(G[a][b].toString() === GEOMETRY.scatter_exact[a][b],
+         "G[" + a + "][" + b + "] recomputed === committed");
+
+  /* 6. components orthonormality (float display-geometry claim) */
+  const C = GEOMETRY.components;
+  for (let i = 0; i < 6; i++)
+    for (let j = i; j < 6; j++) {
+      let d = 0;
+      for (let c = 0; c < 32; c++) d += C[i][c] * C[j][c];
+      ok(Math.abs(d - (i === j ? 1 : 0)) < 1e-12,
+         "components " + i + "," + j + " orthonormal within 1e-12");
+    }
+
+  /* 7. eigen-residual ||G v - lambda v|| / |lambda| < 1e-9 on float64(G)
+   * built from the committed exact strings (display-geometry claim). */
+  const Gf = GEOMETRY.scatter_exact.map(
+    (row) => row.map((s) => Number(BigInt(s))));      /* display-only */
+  for (let k = 0; k < 6; k++) {
+    const lam = GEOMETRY.eigenvalues[k], v = C[k];
+    let rn = 0;
+    for (let a = 0; a < 32; a++) {
+      let s = 0;
+      for (let b = 0; b < 32; b++) s += Gf[a][b] * v[b];
+      const r = s - lam * v[a];
+      rn += r * r;
+    }
+    ok(Math.sqrt(rn) / Math.abs(lam) < 1e-9,
+       "eigen-residual of PC" + (k + 1) + " < 1e-9");
+  }
+
+  /* 8. exact-cosine engine */
+  const pair = computeAllDots(vectors);
+  for (let i = 0; i < pair.n; i++)
+    ok(pair.norms[i] > 0n, "norm^2 of " + vectors[i].fam + "[" +
+       vectors[i].idx + "] is positive");
+  ok(isCosExactlyOne(pair.dots[0], pair.norms[0], pair.norms[0]),
+     "cos(a,a) === 1 exactly (cross-multiplied BigInt)");
+  ok(cosCmpExact(pair.dots[0], pair.norms[0],
+                 pair.dots[0], pair.norms[0]) === 0,
+     "comparator says cos(a,a) ties with itself");
+  let negI = -1, negJ = -1;
+  for (let i = 0; i < pair.n && negI < 0; i++)
+    for (let j = i + 1; j < pair.n; j++)
+      if (pair.dots[i * pair.n + j] < 0n) { negI = i; negJ = j; break; }
+  ok(negI >= 0, "a negative-dot pair exists in the committed model");
+  ok(!isCosExactlyOne(pair.dots[negI * pair.n + negJ],
+                      pair.norms[negI], pair.norms[negJ]),
+     "negative pair is not cosine 1");
+  ok(cosCmpExact(pair.dots[negI * pair.n + negJ], pair.norms[negJ],
+                 pair.norms[negI], pair.norms[negI]) < 0,
+     "sign handling: negative cosine ranks below cosine 1");
+  ok(displayCosine(pair.dots[negI * pair.n + negJ],
+                   pair.norms[negI], pair.norms[negJ]) < 0,
+     "display cosine of the negative pair is negative");
+  const dims = vectors[0].raw.length;
+  for (const [i, j] of [[0, 30], [5, 61], [27, 54]]) {
+    ok(dotExact(vectors[i].raw, vectors[j].raw, 0, 0, dims) ===
+       dotExact(vectors[j].raw, vectors[i].raw, 0, 0, dims),
+       "dotExact symmetry on pair " + i + "," + j);
+  }
+  const near = nearestByCosine(pair, 0, 5);
+  ok(near.length === 5 && near.every((j) => j !== 0),
+     "nearest-5 excludes self");
+  for (let r = 0; r + 1 < near.length; r++) {
+    const a = near[r], b = near[r + 1];
+    ok(cosCmpExact(pair.dots[0 * pair.n + a], pair.norms[a],
+                   pair.dots[0 * pair.n + b], pair.norms[b]) >= 0,
+       "nearest-5 exact ordering is monotone at rank " + r);
+  }
+
+  /* 9. projection purity: identical input -> identical output */
+  const pA = project3(0.31, -0.62, 0.47, 0.8, -0.35, 1.2);
+  const pB = project3(0.31, -0.62, 0.47, 0.8, -0.35, 1.2);
+  ok(pA.x === pB.x && pA.y === pB.y && pA.depth === pB.depth && pA.f === pB.f,
+     "project3 is pure (same input, identical output)");
+
+  computePcaCoords(vectors, C);
+  ok(vectors.every((v) => v.pc.length === 6), "6 PC coords per vector");
+
+  /* 10. tetrad camera-link plumbing (linked = one aliased view object) */
+  const cams = [{ view: { yaw: 1, pitch: 0.2, zoom: 1 } },
+                { view: { yaw: 2, pitch: 0.3, zoom: 2 } },
+                { view: { yaw: 3, pitch: 0.4, zoom: 3 } }];
+  linkViews(cams, cams[2]);
+  ok(cams[0].view === cams[1].view && cams[1].view === cams[2].view,
+     "linkViews: all stages share one view object");
+  ok(cams[0].view.yaw === 3 && cams[0].view.zoom === 3,
+     "linkViews: shared view adopts the source panel's orientation");
+  cams[0].view.yaw = 9;
+  ok(cams[2].view.yaw === 9, "linked: orbiting one panel turns them all");
+  unlinkViews(cams);
+  ok(cams[0].view !== cams[1].view && cams[1].view !== cams[2].view,
+     "unlinkViews: every stage gets its own view object");
+  ok(cams[1].view.yaw === 9 && cams[2].view.pitch === 0.4,
+     "unlink keeps the shared orientation as each panel's start");
+  cams[0].view.yaw = 5;
+  ok(cams[1].view.yaw === 9, "unlinked: orbiting one leaves the others");
+
+  /* 11. auto-rotation clock (the pure formula the rAF loop renders with) */
+  ok(ROT_REV_MS >= 40000 && ROT_REV_MS <= 60000,
+     "rotation period is gentle (40-60 s per revolution)");
+  ok(yawAtTime(0.62, 0) === 0.62,
+     "yawAtTime at t=0 is the view's own base yaw (pause = still frame)");
+  ok(Math.abs(yawAtTime(0, ROT_REV_MS) - Math.PI * 2) < 1e-9,
+     "yawAtTime advances one full revolution per ROT_REV_MS");
+  ok(Math.abs(wrapYaw(yawAtTime(0.62, ROT_REV_MS / 2)) -
+              wrapYaw(0.62 + Math.PI)) < 2e-4,
+     "half a period turns the camera half a revolution (mod 2pi)");
+  ok(wrapYaw(9.9) === wrapYaw(9.9 - Math.PI * 2) &&
+     wrapYaw(-9.9) === wrapYaw(-9.9 + Math.PI * 2),
+     "wrapYaw is 2pi-periodic");
+  for (const y of [0, 0.62, 3.14, -3.14, 9.9, -9.9, 123.456]) {
+    ok(wrapYaw(y) >= -3.1415 && wrapYaw(y) <= 3.1415 &&
+       wrapYaw(wrapYaw(y)) === wrapYaw(y),
+       "wrapYaw lands in (-pi, pi] and is its own fixed point for " + y);
+  }
+
+  return { checks, model, vectors, pair, G };
+}
+
+function nodeSelfTest() {
+  const r = runChecks();
+  globalThis.__PAGE_CHECK__ = { page: "space", pass: true, checks: r.checks };
+}
+</script>
+<script>
+"use strict";
+/* ======================= browser layer: rendering =======================
+ * Nothing in this block runs under Node: top-level code only defines
+ * functions and one inert singleton. All pixel math is display geometry. */
+
+let UI = null;   /* set by init(); holds {model, vectors, pair, state, ...} */
+
+const GOLD = "#ffd166", INKDIM = "#7f849c";
+const TETRAD_COMBOS = [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]];
+
+function pcPct(k) { return (GEOMETRY.explained_ratio[k] * 100).toFixed(1); }
+
+/* Which 3 coordinates a given stage plots right now (display floats). */
+function axesSpec(st) {
+  const s = UI.state;
+  if (st.id === "stage" && s.mode === "A") {
+    const [i, j, k] = s.dims;
+    return {
+      derived: false,
+      names: ["dim " + i, "dim " + j, "dim " + k],
+      getter: (v) => [v.floats[i], v.floats[j], v.floats[k]],
+    };
+  }
+  const combo = st.id === "stage" ? [0, 1, 2] : TETRAD_COMBOS[st.panel];
+  return {
+    derived: true,
+    names: combo.map((c) => "PC" + (c + 1)),
+    getter: (v) => [v.pc[combo[0]], v.pc[combo[1]], v.pc[combo[2]]],
+  };
+}
+
+function depthAlpha(depth) {
+  const t = Math.max(0, Math.min(1, (depth + 1.7) / 3.4));
+  return 0.38 + 0.62 * t;
+}
+
+function hexBlend(h1, h2, t) {   /* display-only color mixing */
+  const p = (h, i) => parseInt(h.slice(i, i + 2), 16);
+  const c = (a, b) => Math.round(a + (b - a) * t);
+  return "rgb(" + c(p(h1, 1), p(h2, 1)) + "," + c(p(h1, 3), p(h2, 3)) +
+         "," + c(p(h1, 5), p(h2, 5)) + ")";
+}
+
+function drawMark(ctx, shape, x, y, r, color, alpha) {
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  if (shape === "diamond") {
+    ctx.moveTo(x, y - r * 1.25); ctx.lineTo(x + r * 1.25, y);
+    ctx.lineTo(x, y + r * 1.25); ctx.lineTo(x - r * 1.25, y);
+    ctx.closePath();
+    ctx.fillStyle = color; ctx.fill();
+  } else if (shape === "ring") {
+    ctx.arc(x, y, r, 0, 6.2832);
+    ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
+  } else {
+    ctx.arc(x, y, r, 0, 6.2832);
+    ctx.fillStyle = color; ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function fitCanvas(cv) {
+  const dpr = (typeof devicePixelRatio === "number" && devicePixelRatio) || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  const bw = Math.max(1, Math.round(w * dpr)),
+        bh = Math.max(1, Math.round(h * dpr));
+  if (cv.width !== bw || cv.height !== bh) { cv.width = bw; cv.height = bh; }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+
+function drawStage(st) {
+  const { ctx, w, h } = fitCanvas(st.canvas);
+  ctx.clearRect(0, 0, w, h);
+  const s = UI.state, V = st.view, spec = axesSpec(st);
+  const yaw = rotYaw(V);          /* base yaw + the shared rotation clock */
+  const ext = computeExtent(UI.vectors, spec.getter) * 1.06;
+  const cx = w / 2, cy = h / 2, basePx = Math.min(w, h) * 0.40;
+  const P = (x, y, z) => {
+    const p = project3(x / ext, y / ext, z / ext, yaw, V.pitch, V.zoom);
+    return { sx: cx + p.x * basePx, sy: cy + p.y * basePx,
+             depth: p.depth, f: p.f };
+  };
+
+  /* floor grid (orientation aid, on the plane y = -1.15) */
+  ctx.lineWidth = 1; ctx.strokeStyle = "#1d2432";
+  for (let g = -4; g <= 4; g++) {
+    const t = (g / 4) * ext;
+    const a1 = P(t, -1.15 * ext, -ext), a2 = P(t, -1.15 * ext, ext);
+    const b1 = P(-ext, -1.15 * ext, t), b2 = P(ext, -1.15 * ext, t);
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath(); ctx.moveTo(a1.sx, a1.sy); ctx.lineTo(a2.sx, a2.sy);
+    ctx.moveTo(b1.sx, b1.sy); ctx.lineTo(b2.sx, b2.sy); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  /* axis lines through the origin: solid = literal, dashed = derived */
+  const axCol = spec.derived ? "#7d6fb8" : "#55617a";
+  ctx.strokeStyle = axCol; ctx.fillStyle = INKDIM;
+  ctx.font = "10px " + "ui-monospace, Menlo, monospace";
+  if (spec.derived) ctx.setLineDash([5, 4]);
+  const UNIT = [[1.18, 0, 0], [0, 1.18, 0], [0, 0, 1.18]];
+  for (let a = 0; a < 3; a++) {
+    const e = UNIT[a];
+    const p1 = P(-e[0] * ext, -e[1] * ext, -e[2] * ext);
+    const p2 = P(e[0] * ext, e[1] * ext, e[2] * ext);
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy);
+    ctx.stroke();
+    /* tripod label names the CURRENT axis at its positive tip */
+    ctx.fillStyle = spec.derived ? "#b3a4e8" : "#93a0bd";
+    ctx.fillText(spec.names[a] + (spec.derived ? " (derived)" : " (literal)"),
+                 p2.sx + 4, p2.sy + 3);
+    /* tick labels at round values: display floats of exact coordinates */
+    ctx.fillStyle = INKDIM;
+    const step = niceStep(ext);
+    const dec = step >= 1 ? 0 : (step >= 0.1 ? 1 : 2);
+    for (const tv of tickValues(ext)) {
+      const q = P(a === 0 ? tv : 0, a === 1 ? tv : 0, a === 2 ? tv : 0);
+      ctx.globalAlpha = 0.75;
+      ctx.fillRect(q.sx - 1, q.sy - 1, 2, 2);
+      ctx.fillText(fmtF(tv, dec), q.sx + 3, q.sy - 3);
+      ctx.globalAlpha = 1;
+    }
+  }
+  ctx.setLineDash([]);
+
+  /* painter's algorithm over marks (and wpe polyline segments) */
+  const items = [];
+  for (let gi = 0; gi < UI.vectors.length; gi++) {
+    const v = UI.vectors[gi];
+    if (!s.fams[v.fam]) continue;
+    const c = spec.getter(v);
+    const p = P(c[0], c[1], c[2]);
+    items.push({ kind: "mark", gi, v, p });
+  }
+  if (s.poly && s.fams.wpe) {
+    const wv = UI.vectors.filter((v) => v.fam === "wpe");
+    for (let i = 0; i + 1 < wv.length; i++) {
+      const c1 = spec.getter(wv[i]), c2 = spec.getter(wv[i + 1]);
+      const p1 = P(c1[0], c1[1], c1[2]), p2 = P(c2[0], c2[1], c2[2]);
+      items.push({ kind: "seg", p1, p2,
+                   p: { depth: (p1.depth + p2.depth) / 2 } });
+    }
+  }
+  items.sort((a, b) => a.p.depth - b.p.depth);   /* far first */
+
+  st.picks = [];
+  ctx.font = "10.5px ui-monospace, Menlo, monospace";
+  for (const it of items) {
+    if (it.kind === "seg") {
+      ctx.globalAlpha = 0.5 * depthAlpha(it.p.depth);
+      ctx.strokeStyle = "#ffd43b"; ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.moveTo(it.p1.sx, it.p1.sy);
+      ctx.lineTo(it.p2.sx, it.p2.sy); ctx.stroke();
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    const v = it.v, p = it.p;
+    const isSel = UI.state.sel === it.gi, isCmp = UI.state.cmp === it.gi;
+    const r = (v.fam === "wpe" ? 4.6 : 4.2) * p.f * (isSel || isCmp ? 1.25 : 1);
+    const al = depthAlpha(p.depth);
+    drawMark(ctx, v.famDef.shape, p.sx, p.sy, r, v.famDef.color, al);
+    if (isSel || isCmp) {
+      ctx.globalAlpha = 1; ctx.strokeStyle = GOLD; ctx.lineWidth = 2;
+      ctx.setLineDash(isCmp && !isSel ? [4, 3] : []);
+      ctx.beginPath(); ctx.arc(p.sx, p.sy, r + 3.5, 0, 6.2832); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (s.labels === "all" || isSel || isCmp) {
+      ctx.globalAlpha = Math.min(1, al + 0.15);
+      ctx.lineWidth = 3; ctx.strokeStyle = "#0b0e14";
+      ctx.strokeText(v.label, p.sx + r + 3, p.sy + 3.5);
+      ctx.fillStyle = v.famDef.color;
+      ctx.fillText(v.label, p.sx + r + 3, p.sy + 3.5);
+      ctx.globalAlpha = 1;
+    }
+    st.picks.push({ x: p.sx, y: p.sy, gi: it.gi });
+  }
+}
+
+/* ------------------------- 62x62 pair matrix ------------------------- */
+const MCELL = 9, MSTRIP = 12, MPAD = 3;
+const MOFF = MSTRIP + MPAD;
+
+function matrixCss() { return MOFF + 62 * MCELL + 1; }
+
+function drawMatrix() {
+  const cv = UI.matrixCanvas;
+  const size = matrixCss();
+  cv.style.width = size + "px"; cv.style.height = size + "px";
+  const { ctx } = fitCanvas(cv);
+  ctx.clearRect(0, 0, size, size);
+  const { n, dots, norms } = UI.pair;
+  const bg = "#11151f";
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      /* cell COLOR is a display float; exact values live in the readout */
+      const c = displayCosine(dots[i * n + j], norms[i], norms[j]);
+      const t = Math.min(1, Math.abs(c));
+      ctx.fillStyle = c === 0 ? "#232a3a"
+        : (c < 0 ? hexBlend(bg, "#4dabf7", t) : hexBlend(bg, "#ffa94d", t));
+      ctx.fillRect(MOFF + j * MCELL, MOFF + i * MCELL, MCELL, MCELL);
+    }
+  }
+  /* family-colored strips along both axes */
+  for (let k = 0; k < n; k++) {
+    ctx.fillStyle = UI.vectors[k].famDef.color;
+    ctx.fillRect(MOFF + k * MCELL, 0, MCELL, MSTRIP);
+    ctx.fillRect(0, MOFF + k * MCELL, MSTRIP, MCELL);
+  }
+  /* separators between families (after wte=27 and lm_head=54 rows) */
+  ctx.strokeStyle = "#0b0e14"; ctx.lineWidth = 2;
+  for (const b of [27, 54]) {
+    const q = MOFF + b * MCELL;
+    ctx.beginPath();
+    ctx.moveTo(q, 0); ctx.lineTo(q, size);
+    ctx.moveTo(0, q); ctx.lineTo(size, q);
+    ctx.stroke();
+  }
+  /* active cell */
+  const mc = UI.state.mcell;
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 2;
+  ctx.strokeRect(MOFF + mc.j * MCELL - 1, MOFF + mc.i * MCELL - 1,
+                 MCELL + 2, MCELL + 2);
+}
+
+function matrixCellAt(px, py) {
+  const i = Math.floor((py - MOFF) / MCELL), j = Math.floor((px - MOFF) / MCELL);
+  if (i < 0 || i >= 62 || j < 0 || j >= 62) return null;
+  return { i, j };
+}
+
+function pairReadoutHtml(i, j) {
+  const { n, dots, norms } = UI.pair;
+  const a = UI.vectors[i], b = UI.vectors[j];
+  const d = dots[i * n + j];
+  const cos = displayCosine(d, norms[i], norms[j]);
+  const one = isCosExactlyOne(d, norms[i], norms[j]);
+  return "<b>" + a.fam + "[" + a.label + "] &#215; " + b.fam + "[" + b.label +
+    "]</b> &nbsp; <span class='k'>cos &#8776;</span> " +
+    (one ? "1 (exact)" : fmtF(cos, 6)) +
+    " <span class='k'>(display rounding of an exact integer ratio)</span>" +
+    "<br><span class='k'>exact dot (Q32.96):</span> <span class='mono'>" +
+    fixed96(d) + "</span>";
+}
+
+/* ------------------------- dirty-flag renderer ------------------------- */
+function activeStages() {
+  const s = UI.state;
+  return UI.stages.filter((st) =>
+    s.mode === "C" ? st.id !== "stage" : st.id === "stage");
+}
+function renderTick() {
+  UI.rafPending = false;
+  for (const st of activeStages())
+    if (st.dirty) { st.dirty = false; drawStage(st); }
+  if (UI.state.matrix && UI.matrixDirty) {
+    UI.matrixDirty = false; drawMatrix();
+  }
+}
+function scheduleDraw() {
+  if (!UI.rafPending) {
+    UI.rafPending = true;
+    requestAnimationFrame(renderTick);
+  }
+}
+function markAllDirty() {
+  for (const st of UI.stages) st.dirty = true;
+  UI.matrixDirty = true;
+  scheduleDraw();
+}
+</script>
+<script>
+"use strict";
+/* ======================= browser layer: UI wiring ======================= */
+
+const byId = (id) => document.getElementById(id);
+const clampF = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+const DEFAULT_VIEW = { yaw: 0.62, pitch: -0.38, zoom: 1 };
+
+function setPressed(btn, on) {
+  btn.classList.toggle("on", on);
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+}
+
+function glyphHtml(v) {
+  const c = v.famDef.color;
+  const g = v.famDef.shape === "circle" ? "&#9679;"
+          : v.famDef.shape === "ring" ? "&#9675;" : "&#9670;";
+  return '<span class="fam-glyph" style="color:' + c + '">' + g + "</span>";
+}
+
+/* ---------------- selection ---------------- */
+function setSel(gi) {
+  UI.state.sel = gi;
+  afterSelectionChange();
+}
+function setCmp(gi) {
+  UI.state.cmp = gi;
+  afterSelectionChange();
+}
+function afterSelectionChange() {
+  const s = UI.state;
+  if (s.sel !== null && s.cmp !== null) s.mcell = { i: s.sel, j: s.cmp };
+  renderInspector();
+  updateListMarks();
+  markAllDirty();
+}
+
+/* ---------------- inspector ---------------- */
+function renderInspector() {
+  const el = byId("inspBody"), s = UI.state;
+  if (s.sel === null) {
+    el.innerHTML = '<p class="subnote">click a mark (or a chip below) to ' +
+      "select it — gold ring in every view. <b>Shift-click</b> sets the " +
+      "compare vector (dashed gold ring).</p>";
+    return;
+  }
+  const v = UI.vectors[s.sel];
+  let h = '<div class="sel-head">' + glyphHtml(v) +
+    '<span class="big">' + v.label + "</span>" +
+    '<span class="mono" style="color:var(--dim)">' + v.famDef.tensor +
+    " row " + v.idx + "</span></div>" +
+    '<div class="subnote">' + v.famDef.long + "</div>" +
+    '<div class="row" style="margin:6px 0">' +
+    '<button id="mkCmpBtn">compare = this</button>' +
+    '<button id="swapBtn">swap</button>' +
+    '<button id="clearBtn">clear</button></div>';
+
+  /* all 32 coordinates, exact (raw int64, hex, exact decimal) */
+  h += '<div class="coordtable-wrap"><table class="coords"><thead><tr>' +
+    "<th>dim</th><th>raw int64</th><th>hex</th>" +
+    "<th>exact value (raw / 2<sup>48</sup>)</th></tr></thead><tbody>";
+  for (let c = 0; c < v.raw.length; c++) {
+    const onax = s.mode === "A" && s.dims.indexOf(c) >= 0;
+    h += '<tr class="' + (onax ? "onax" : "") + '"><td class="d">' + c +
+      "</td><td>" + v.raw[c].toString() + "</td><td>" + Q48.toHex(v.raw[c]) +
+      "</td><td>" + Q48.toDecimalString(v.raw[c]) + "</td></tr>";
+  }
+  h += "</tbody></table></div>";
+
+  /* exact pair readouts vs the compare selection */
+  if (s.cmp !== null) {
+    const w = UI.vectors[s.cmp];
+    const { n, dots, norms } = UI.pair;
+    const d = dots[s.sel * n + s.cmp];
+    const one = isCosExactlyOne(d, norms[s.sel], norms[s.cmp]);
+    const cosTxt = one ? "1 (exactly — integer identity dot&#178; = |a|&#178;&#183;|b|&#178;)"
+      : displayCosine(d, norms[s.sel], norms[s.cmp]).toFixed(10) +
+        ' <span class="k">&#8592; display rounding of an exact integer ratio</span>';
+    h += '<div class="pairbox"><div class="k">pair vs compare ' + glyphHtml(w) +
+      " <b>" + w.label + "</b> (" + w.famDef.tensor + " row " + w.idx + ")</div>" +
+      '<div class="k">exact dot &#9001;a,b&#9002; (Q32.96)</div>' +
+      '<div class="exact">' + fixed96(d) + "</div>" +
+      '<div class="k">exact |a|&#178; (Q32.96)</div>' +
+      '<div class="exact">' + fixed96(norms[s.sel]) + "</div>" +
+      '<div class="k">exact |b|&#178; (Q32.96)</div>' +
+      '<div class="exact">' + fixed96(norms[s.cmp]) + "</div>" +
+      '<div class="k">cosine</div><div class="exact">' + cosTxt + "</div></div>";
+  }
+
+  /* nearest-5 by cosine, EXACT ordering */
+  const near = nearestByCosine(UI.pair, s.sel, 5);
+  h += '<div class="pairbox"><div class="k">nearest 5 by cosine — ' +
+    "<b>exact ordering</b> (sign class + cross-multiplied BigInt; " +
+    "no float in the ranking; candidates: all 61 others)</div>" +
+    '<ul class="nearlist">';
+  for (const gi of near) {
+    const u = UI.vectors[gi];
+    const { n, dots, norms } = UI.pair;
+    const cd = displayCosine(dots[s.sel * n + gi], norms[s.sel], norms[gi]);
+    h += '<li><button data-gi="' + gi + '">' + glyphHtml(u) + " " + u.label +
+      ' <span class="k">' + u.famDef.tensor + " " + u.idx + "</span>" +
+      '<span class="cosv">cos &#8776; ' + fmtF(cd, 6) + "</span></button></li>";
+  }
+  h += '</ul><div class="k" style="margin-top:4px">click to set as compare</div></div>';
+
+  el.innerHTML = h;
+  byId("mkCmpBtn").addEventListener("click", () => setCmp(s.sel));
+  byId("swapBtn").addEventListener("click", () => {
+    const t = UI.state.sel;
+    UI.state.sel = UI.state.cmp === null ? t : UI.state.cmp;
+    UI.state.cmp = t;
+    afterSelectionChange();
+  });
+  byId("clearBtn").addEventListener("click", () => {
+    UI.state.sel = null; UI.state.cmp = null; afterSelectionChange();
+  });
+  el.querySelectorAll(".nearlist button").forEach((b) =>
+    b.addEventListener("click", () => setCmp(+b.dataset.gi)));
+}
+
+/* ---------------- vector chip list ---------------- */
+function buildVecList() {
+  const el = byId("vecList");
+  let h = "";
+  for (const fam of FAM_DEFS) {
+    const members = UI.vectors.filter((v) => v.fam === fam.key);
+    h += '<div class="fam-b">' + fam.tensor + " (" + members.length + ")</div>";
+    for (const v of members) {
+      const gi = UI.vectors.indexOf(v);
+      h += '<button data-gi="' + gi + '" style="color:' + fam.color +
+        '" title="' + fam.tensor + " row " + v.idx + '">' + v.label + "</button>";
+    }
+  }
+  el.innerHTML = h;
+  el.querySelectorAll("button").forEach((b) => {
+    b.addEventListener("click", (e) =>
+      e.shiftKey ? setCmp(+b.dataset.gi) : setSel(+b.dataset.gi));
+    b.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.shiftKey) {
+        e.preventDefault(); setCmp(+b.dataset.gi);
+      } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const all = [...el.querySelectorAll("button")];
+        const i = all.indexOf(b);
+        if (i + 1 < all.length) all[i + 1].focus();
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const all = [...el.querySelectorAll("button")];
+        const i = all.indexOf(b);
+        if (i > 0) all[i - 1].focus();
+      }
+    });
+  });
+}
+function updateListMarks() {
+  byId("vecList").querySelectorAll("button").forEach((b) => {
+    b.classList.toggle("sel", +b.dataset.gi === UI.state.sel);
+    b.classList.toggle("cmp", +b.dataset.gi === UI.state.cmp);
+  });
+}
+
+/* ---------------- mode A axis controls ---------------- */
+function buildAxisControls() {
+  for (const [selId, ax] of [["dimX", 0], ["dimY", 1], ["dimZ", 2]]) {
+    const sel = byId(selId);
+    let h = "";
+    for (let d = 0; d < 32; d++) h += "<option value='" + d + "'>dim " + d + "</option>";
+    sel.innerHTML = h;
+    sel.addEventListener("change", () => assignDim(ax, +sel.value));
+  }
+  const strip = byId("dimStrip");
+  let h = "";
+  for (let d = 0; d < 32; d++)
+    h += '<button data-d="' + d + '" aria-label="residual dim ' + d + '">' +
+         d + "</button>";
+  strip.innerHTML = h;
+  strip.querySelectorAll("button").forEach((b) =>
+    b.addEventListener("click", () => assignDim(UI.state.armed, +b.dataset.d)));
+  for (const [bid, a] of [["armX", 0], ["armY", 1], ["armZ", 2]])
+    byId(bid).addEventListener("click", () => setArmed(a));
+}
+function setArmed(a) {
+  UI.state.armed = a;
+  [["armX", 0], ["armY", 1], ["armZ", 2]].forEach(([bid, i]) =>
+    setPressed(byId(bid), i === a));
+}
+function assignDim(axis, d) {
+  const dims = UI.state.dims;
+  const other = dims.indexOf(d);
+  if (other >= 0 && other !== axis) dims[other] = dims[axis];  /* swap */
+  dims[axis] = d;
+  syncAxisUi();
+  renderInspector();
+  markAllDirty();
+}
+function syncAxisUi() {
+  const [i, j, k] = UI.state.dims;
+  byId("dimX").value = i; byId("dimY").value = j; byId("dimZ").value = k;
+  byId("dimStrip").querySelectorAll("button").forEach((b) => {
+    const d = +b.dataset.d, ax = UI.state.dims.indexOf(d);
+    b.classList.toggle("onaxis", ax >= 0);
+    b.title = ax >= 0 ? "dim " + d + " — on " + "xyz"[ax] + " axis"
+                      : "dim " + d;
+  });
+  syncBanner(); syncAxisReadout();
+}
+
+/* ---------------- banners & axis readouts ---------------- */
+function syncBanner() {
+  const el = byId("modeBanner"), s = UI.state;
+  const r = GEOMETRY.explained_ratio;
+  el.classList.toggle("derived", s.mode !== "A");
+  if (s.mode === "A") {
+    const [i, j, k] = s.dims;
+    el.innerHTML = "showing 3 of " + GEOMETRY.n_cols +
+      " literal coordinates — <b>" + (GEOMETRY.n_cols - 3) +
+      " dims not drawn</b> &#183; on axes: dim " + i + " &#183; dim " + j +
+      " &#183; dim " + k;
+  } else if (s.mode === "B") {
+    const shown = ((r[0] + r[1] + r[2]) * 100).toFixed(1);
+    el.innerHTML = "derived PCA view — PC1&#183;PC2&#183;PC3 carry <b>" +
+      shown + "% of wte variance</b>; the remaining " +
+      (100 - (r[0] + r[1] + r[2]) * 100).toFixed(1) +
+      "% (PC4 and beyond) is not drawn";
+  } else {
+    const four = ((r[0] + r[1] + r[2] + r[3]) * 100).toFixed(1);
+    el.innerHTML = "PC tetrad — four 3-PC views over PC1..PC4 (<b>" + four +
+      "% of wte variance</b>); each panel omits the PC named in its title; " +
+      "directions beyond PC4 (" +
+      (100 - (r[0] + r[1] + r[2] + r[3]) * 100).toFixed(1) +
+      "%) are not drawn in any panel" +
+      (UI.state.linked
+        ? "; <b>one camera</b> turns all four panels — four 3-D shadows " +
+          "of the same 4-D point set"
+        : "; cameras <b>unlinked</b> — each panel orbits on its own");
+  }
+}
+function syncAxisReadout() {
+  const el = byId("axisReadout"), s = UI.state;
+  const lit = '<span class="tag lit">literal, exact</span>';
+  const der = '<span class="tag der">derived</span>';
+  if (s.mode === "A") {
+    const [i, j, k] = s.dims;
+    el.innerHTML = 'x <span class="ax">residual dim ' + i + "</span>" + lit +
+      ' &#183; y <span class="ax">residual dim ' + j + "</span>" + lit +
+      ' &#183; z <span class="ax">residual dim ' + k + "</span>" + lit +
+      " — axis units are exact Q16.48 values; tick numerals are display floats";
+  } else if (s.mode === "B") {
+    el.innerHTML = 'x <span class="ax">PC1 — ' + pcPct(0) +
+      "% of wte variance</span>" + der +
+      ' &#183; y <span class="ax">PC2 — ' + pcPct(1) + "%</span>" + der +
+      ' &#183; z <span class="ax">PC3 — ' + pcPct(2) + "%</span>" + der +
+      " — basis from wte only; lm_head &amp; wpe are projected onto it";
+  } else if (UI.state.linked) {
+    el.innerHTML = "four panels over PC1..PC4 " + der +
+      " — shared selection, <b>linked cameras</b>: drag (or arrow-key) any " +
+      "panel and all four turn together; <kbd>+</kbd>/<kbd>&#8722;</kbd> " +
+      "zoom all, <kbd>R</kbd> resets the shared view, <kbd>K</kbd> unlinks";
+  } else {
+    el.innerHTML = "four panels over PC1..PC4 " + der +
+      " — shared selection, <b>cameras unlinked</b>: click or Tab into a " +
+      "panel, then arrows orbit, <kbd>+</kbd>/<kbd>&#8722;</kbd> zoom, " +
+      "<kbd>R</kbd> resets that panel, <kbd>K</kbd> re-links";
+  }
+}
+
+/* ---------------- mode & toggles ---------------- */
+function setMode(m) {
+  UI.state.mode = m;
+  setPressed(byId("modeA"), m === "A");
+  setPressed(byId("modeB"), m === "B");
+  setPressed(byId("modeC"), m === "C");
+  byId("stageWrap").classList.toggle("hidden", m === "C");
+  byId("tetradWrap").classList.toggle("hidden", m !== "C");
+  byId("tetradBar").classList.toggle("hidden", m !== "C");
+  byId("axisControls").classList.toggle("hidden", m !== "A");
+  byId("derivedNote").classList.toggle("hidden", m === "A");
+  syncBanner(); syncAxisReadout();
+  renderInspector();
+  markAllDirty();
+}
+function tetradStages() {
+  return UI.stages.filter((st) => st.panel >= 0);
+}
+function setLinked(on) {
+  UI.state.linked = on;
+  const tet = tetradStages();
+  if (on) linkViews(tet, UI.lastTetrad || tet[0]);
+  else unlinkViews(tet);
+  const b = byId("linkBtn");
+  setPressed(b, on);
+  b.innerHTML = on
+    ? "orbit: <b>linked</b> — drag one panel, all four turn"
+    : "orbit: <b>unlinked</b> — each panel turns alone";
+  syncBanner(); syncAxisReadout();
+  for (const st of tet) st.dirty = true;
+  scheduleDraw();
+}
+/* After a view mutation: redraw the touched stage — and, while the tetrad
+ * cameras are linked, its three siblings (they share the view object). */
+function touchView(st) {
+  if (st.panel >= 0) {
+    UI.lastTetrad = st;
+    if (UI.state.linked) for (const t of tetradStages()) t.dirty = true;
+    else st.dirty = true;
+  } else st.dirty = true;
+  scheduleDraw();
+}
+function toggleFam(f) {
+  UI.state.fams[f] = !UI.state.fams[f];
+  setPressed(byId(f === "wte" ? "famWte" : f === "lmh" ? "famLmh" : "famWpe"),
+             UI.state.fams[f]);
+  syncPolyNote();
+  markAllDirty();
+}
+function toggleLabels() {
+  const s = UI.state;
+  s.labels = s.labels === "all" ? "sel" : "all";
+  const b = byId("labelsBtn");
+  b.textContent = s.labels === "all" ? "labels: all" : "labels: selection";
+  setPressed(b, s.labels === "all");
+  markAllDirty();
+}
+function togglePoly() {
+  UI.state.poly = !UI.state.poly;
+  setPressed(byId("polyBtn"), UI.state.poly);
+  syncPolyNote();
+  markAllDirty();
+}
+function syncPolyNote() {
+  byId("polyNote").classList.toggle(
+    "hidden", !(UI.state.poly && UI.state.fams.wpe));
+}
+function toggleMatrix() {
+  const s = UI.state;
+  s.matrix = !s.matrix;
+  setPressed(byId("matrixBtn"), s.matrix);
+  byId("matrixCard").classList.toggle("hidden", !s.matrix);
+  if (s.matrix) {
+    UI.matrixDirty = true; scheduleDraw();
+    updateMatrixReadout();
+    byId("matrix").focus();
+  }
+}
+function toggleHelp(open) {
+  const next = open === undefined ? !UI.helpOpen : open;
+  if (next === UI.helpOpen) return;
+  UI.helpOpen = next;
+  byId("helpOverlay").classList.toggle("open", UI.helpOpen);
+  if (UI.helpOpen) {
+    UI.helpReturnFocus = document.activeElement;
+    byId("helpBox").focus();
+  } else if (UI.helpReturnFocus && UI.helpReturnFocus.focus) {
+    UI.helpReturnFocus.focus();
+    UI.helpReturnFocus = null;
+  }
+}
+
+/* ---------------- gentle auto-rotation ---------------- */
+/* A rAF loop — browser-only, so the Node self-check never sees a timer —
+ * advances ONE virtual clock shared by every 3-D stage; each view renders
+ * at yawAtTime(view.yaw, virtualMs), so panels with different base yaws
+ * (an unlinked tetrad) all turn at the same gentle rate. Pausing folds
+ * the offset into every distinct view object (linked tetrad panels share
+ * one), so no camera ever jumps. Only camera-grabbing interactions pause
+ * (drag, wheel, orbit keys, reset); mode/family/label/matrix switches
+ * keep the play state. The pair matrix is a flat table and never
+ * animates — its arrow keys move a cell, not a camera, so they do not
+ * pause either. */
+function rotYaw(view) { return yawAtTime(view.yaw, UI.rot.virtualMs); }
+
+function distinctViews() {
+  const seen = [];
+  for (const st of UI.stages)
+    if (seen.indexOf(st.view) < 0) seen.push(st.view);
+  return seen;
+}
+
+function rotUpdateBtn() {
+  const b = byId("rotBtn");
+  b.setAttribute("aria-pressed", String(UI.rot.playing));
+  b.textContent = (UI.rot.playing ? "❚❚" : "▸") + " auto-rotate";
+}
+
+function rotTick(ts) {
+  if (!UI.rot.playing) { UI.rot.raf = null; return; }
+  if (UI.rot.lastTs != null)      /* clamp hitches/hidden-tab gaps */
+    UI.rot.virtualMs += Math.min(ts - UI.rot.lastTs, 100);
+  UI.rot.lastTs = ts;
+  /* draw the stages the current mode shows; mode switches mid-flight
+   * just change what this per-frame call renders */
+  for (const st of activeStages()) { st.dirty = false; drawStage(st); }
+  UI.rot.raf = requestAnimationFrame(rotTick);
+}
+
+function playRot() {
+  if (!UI.rot.playing) {
+    UI.rot.playing = true;
+    UI.rot.lastTs = null;
+    UI.rot.raf = requestAnimationFrame(rotTick);
+  }
+  rotUpdateBtn();
+}
+
+/* Fold the rotation offset into every distinct view object (the camera
+ * must not jump), then freeze. Every camera-grabbing interaction lands
+ * here first. */
+function pauseRot() {
+  const wasLive = UI.rot.playing || UI.rot.virtualMs !== 0;
+  if (UI.rot.raf != null) {
+    cancelAnimationFrame(UI.rot.raf);
+    UI.rot.raf = null;
+  }
+  if (UI.rot.virtualMs !== 0) {
+    for (const v of distinctViews()) v.yaw = wrapYaw(rotYaw(v));
+    UI.rot.virtualMs = 0;
+  }
+  UI.rot.playing = false;
+  UI.rot.lastTs = null;
+  rotUpdateBtn();
+  if (wasLive) markAllDirty();
+}
+
+function toggleRot() { if (UI.rot.playing) pauseRot(); else playRot(); }
+
+/* ---------- auto-walk (cycles the selection through all vectors) ---------- */
+/* Same shape as the rotation loop: rAF-clock cadence, self-terminating on
+ * its flag, started only from a browser-side click handler.  Reuses the
+ * ordinary selection path, so the gold ring, the inspector and the list
+ * marks all follow the walk; it composes freely with auto-rotate. */
+function walkUpdateBtn() {
+  const b = byId("walkBtn");
+  b.setAttribute("aria-pressed", String(UI.walk.playing));
+  b.textContent = (UI.walk.playing ? "❚❚" : "▸") + " walk";
+}
+
+function walkTick(ts) {
+  if (!UI.walk.playing) { UI.walk.raf = null; return; }
+  if (UI.walk.lastTs == null) UI.walk.lastTs = ts;
+  if (ts - UI.walk.lastTs >= 1000) {
+    UI.walk.lastTs = ts;
+    setSel(UI.state.sel === null ? 0 : (UI.state.sel + 1) % UI.vectors.length);
+  }
+  UI.walk.raf = requestAnimationFrame(walkTick);
+}
+
+function playWalk() {
+  if (!UI.walk.playing) {
+    UI.walk.playing = true;
+    UI.walk.lastTs = null;
+    UI.walk.raf = requestAnimationFrame(walkTick);
+  }
+  walkUpdateBtn();
+}
+
+function pauseWalk() {
+  if (UI.walk.raf != null) {
+    cancelAnimationFrame(UI.walk.raf);
+    UI.walk.raf = null;
+  }
+  UI.walk.playing = false;
+  UI.walk.lastTs = null;
+  walkUpdateBtn();
+}
+
+function toggleWalk() { if (UI.walk.playing) pauseWalk(); else playWalk(); }
+
+/* ---------------- canvas interaction ---------------- */
+function pickAt(st, e) {
+  const rect = st.canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  let best = null, bd = 130;
+  for (const p of st.picks || []) {
+    const d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
+    if (d < bd) { bd = d; best = p; }
+  }
+  if (best !== null) {
+    if (e.shiftKey) setCmp(best.gi); else setSel(best.gi);
+  }
+}
+function attachOrbit(st) {
+  const cv = st.canvas;
+  let dragging = false, lx = 0, ly = 0, moved = 0;
+  cv.addEventListener("pointerdown", (e) => {
+    pauseRot();                       /* grabbing the camera pauses it */
+    dragging = true; moved = 0; lx = e.clientX; ly = e.clientY;
+    cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - lx, dy = e.clientY - ly;
+    lx = e.clientX; ly = e.clientY;
+    moved += Math.abs(dx) + Math.abs(dy);
+    st.view.yaw += dx * 0.008;
+    st.view.pitch = clampF(st.view.pitch + dy * 0.006, -1.55, 1.55);
+    touchView(st);
+  });
+  cv.addEventListener("pointerup", () => { dragging = false; });
+  cv.addEventListener("click", (e) => {
+    if (moved > 5) { moved = 0; return; }
+    pickAt(st, e);
+  });
+  cv.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    pauseRot();                       /* grabbing the camera pauses it */
+    st.view.zoom = clampF(st.view.zoom * Math.exp(-e.deltaY * 0.0012), 0.4, 3.4);
+    touchView(st);
+  }, { passive: false });
+  cv.addEventListener("keydown", (e) => {
+    const V = st.view;
+    let used = true;
+    /* each camera key pauses BEFORE it mutates, so the fold happens on
+     * the rendered pose and R lands exactly on the default view */
+    if (e.key === "ArrowLeft") { pauseRot(); V.yaw -= 0.09; }
+    else if (e.key === "ArrowRight") { pauseRot(); V.yaw += 0.09; }
+    else if (e.key === "ArrowUp") { pauseRot(); V.pitch = clampF(V.pitch - 0.07, -1.55, 1.55); }
+    else if (e.key === "ArrowDown") { pauseRot(); V.pitch = clampF(V.pitch + 0.07, -1.55, 1.55); }
+    else if (e.key === "+" || e.key === "=") { pauseRot(); V.zoom = clampF(V.zoom * 1.12, 0.4, 3.4); }
+    else if (e.key === "-" || e.key === "_") { pauseRot(); V.zoom = clampF(V.zoom / 1.12, 0.4, 3.4); }
+    else if (e.key === "r" || e.key === "R") {
+      pauseRot();
+      V.yaw = DEFAULT_VIEW.yaw; V.pitch = DEFAULT_VIEW.pitch;
+      V.zoom = DEFAULT_VIEW.zoom;
+    } else used = false;
+    if (used) { e.preventDefault(); touchView(st); }
+  });
+}
+
+/* ---------------- matrix interaction ---------------- */
+function updateMatrixReadout() {
+  const mc = UI.state.mcell;
+  byId("matrixReadout").innerHTML = pairReadoutHtml(mc.i, mc.j);
+}
+function attachMatrixEvents() {
+  const cv = UI.matrixCanvas, tip = byId("tip");
+  cv.addEventListener("mousemove", (e) => {
+    const rect = cv.getBoundingClientRect();
+    const cell = matrixCellAt(e.clientX - rect.left, e.clientY - rect.top);
+    if (!cell) { tip.style.display = "none"; return; }
+    UI.state.mcell = cell;
+    UI.matrixDirty = true; scheduleDraw();
+    updateMatrixReadout();
+    tip.innerHTML = pairReadoutHtml(cell.i, cell.j);
+    tip.style.display = "block";
+    const tw = 440;
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - tw) + "px";
+    tip.style.top = (e.clientY + 12) + "px";
+  });
+  cv.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  cv.addEventListener("click", (e) => {
+    const rect = cv.getBoundingClientRect();
+    const cell = matrixCellAt(e.clientX - rect.left, e.clientY - rect.top);
+    if (!cell) return;
+    UI.state.sel = cell.i; UI.state.cmp = cell.j;
+    afterSelectionChange();
+  });
+  cv.addEventListener("keydown", (e) => {
+    const mc = UI.state.mcell;
+    let used = true;
+    if (e.key === "ArrowLeft") mc.j = Math.max(0, mc.j - 1);
+    else if (e.key === "ArrowRight") mc.j = Math.min(61, mc.j + 1);
+    else if (e.key === "ArrowUp") mc.i = Math.max(0, mc.i - 1);
+    else if (e.key === "ArrowDown") mc.i = Math.min(61, mc.i + 1);
+    else if (e.key === "Enter") {
+      UI.state.sel = mc.i; UI.state.cmp = mc.j; afterSelectionChange();
+    } else used = false;
+    if (used) {
+      e.preventDefault();
+      UI.matrixDirty = true; scheduleDraw();
+      updateMatrixReadout();
+    }
+  });
+}
+
+/* ---------------- global keys ---------------- */
+function attachGlobalKeys() {
+  document.addEventListener("keydown", (e) => {
+    const tag = e.target && e.target.tagName;
+    if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA") return;
+    if (UI.helpOpen) {
+      if (e.key === "Escape" || e.key === "?") { toggleHelp(false); e.preventDefault(); }
+      return;
+    }
+    switch (e.key) {
+      case "1": setMode("A"); break;
+      case "2": setMode("B"); break;
+      case "3": setMode("C"); break;
+      case "t": case "T": toggleFam("wte"); break;
+      case "u": case "U": toggleFam("lmh"); break;
+      case "p": case "P": toggleFam("wpe"); break;
+      case "l": case "L": toggleLabels(); break;
+      case "o": case "O": togglePoly(); break;
+      case "d": case "D": toggleMatrix(); break;
+      case "k": case "K":
+        if (UI.state.mode !== "C") return;
+        setLinked(!UI.state.linked); break;
+      case "a": case "A": toggleRot(); break;
+      case "?": toggleHelp(true); break;
+      case "Escape": if (UI.state.matrix) toggleMatrix(); break;
+      default: return;
+    }
+    e.preventDefault();
+  });
+}
+
+/* ============================ init ============================ */
+function init() {
+  const badge = byId("checkBadge");
+  let shared;
+  try {
+    shared = runChecks();     /* same assertions Node runs (scatter incl.) */
+  } catch (err) {
+    badge.className = "badge fail";
+    badge.textContent = "self-check: FAILED";
+    console.error(err);
+    return;
+  }
+  badge.className = "badge pass";
+  badge.textContent = "self-check: " + shared.checks + " ✓";
+
+  UI = {
+    model: shared.model, vectors: shared.vectors, pair: shared.pair,
+    state: {
+      mode: "A", dims: [0, 1, 2], armed: 0,
+      fams: { wte: true, lmh: true, wpe: true },
+      labels: "all", poly: true, matrix: true, linked: true,
+      sel: 0, cmp: null, mcell: { i: 0, j: 1 },
+    },
+    stages: [], matrixCanvas: byId("matrix"),
+    rafPending: false, matrixDirty: true, helpOpen: false,
+    helpReturnFocus: null, lastTetrad: null,
+    rot: { playing: false, virtualMs: 0, lastTs: null, raf: null },
+    walk: { playing: false, lastTs: null, raf: null },
+    reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
+  };
+  const mk = (id, panel) => ({
+    id, panel, canvas: byId(id), dirty: true,
+    view: { yaw: DEFAULT_VIEW.yaw, pitch: DEFAULT_VIEW.pitch,
+            zoom: DEFAULT_VIEW.zoom },
+    picks: [],
+  });
+  UI.stages = [mk("stage", -1), mk("tp0", 0), mk("tp1", 1),
+               mk("tp2", 2), mk("tp3", 3)];
+
+  byId("footSha").textContent = SUMMARY.model_sha256;
+
+  /* tetrad panel titles, percentages from the data */
+  for (let p = 0; p < 4; p++) {
+    const combo = TETRAD_COMBOS[p];
+    const omit = [0, 1, 2, 3].filter((c) => combo.indexOf(c) < 0)[0];
+    byId("pt" + p).innerHTML =
+      combo.map((c) => "PC" + (c + 1)).join(" &#183; ") +
+      " — <b>PC" + (omit + 1) + " not drawn (" + pcPct(omit) + "%)</b>";
+  }
+
+  buildAxisControls();
+  buildVecList();
+  for (const st of UI.stages) attachOrbit(st);
+  attachMatrixEvents();
+  attachGlobalKeys();
+  byId("helpBtn").addEventListener("click", () => toggleHelp());
+  byId("helpClose").addEventListener("click", () => toggleHelp(false));
+  byId("helpOverlay").addEventListener("click", (e) => {
+    if (e.target === byId("helpOverlay")) toggleHelp(false);
+  });
+  byId("modeA").addEventListener("click", () => setMode("A"));
+  byId("modeB").addEventListener("click", () => setMode("B"));
+  byId("modeC").addEventListener("click", () => setMode("C"));
+  byId("famWte").addEventListener("click", () => toggleFam("wte"));
+  byId("famLmh").addEventListener("click", () => toggleFam("lmh"));
+  byId("famWpe").addEventListener("click", () => toggleFam("wpe"));
+  byId("labelsBtn").addEventListener("click", toggleLabels);
+  byId("polyBtn").addEventListener("click", togglePoly);
+  byId("matrixBtn").addEventListener("click", toggleMatrix);
+  byId("linkBtn").addEventListener("click",
+    () => setLinked(!UI.state.linked));
+  byId("rotBtn").addEventListener("click", toggleRot);
+  byId("walkBtn").addEventListener("click", toggleWalk);
+  walkUpdateBtn();
+  window.addEventListener("resize", markAllDirty);
+
+  syncAxisUi();
+  syncPolyNote();
+  setLinked(true);          /* default: one camera drives all four panels */
+  setMode("A");
+  afterSelectionChange();
+  rotUpdateBtn();
+  /* Auto-rotation is on by default, but autoplay yields to the user's
+   * reduced-motion preference; the button always allows a manual play. */
+  if (!UI.reducedMotion) playRot();
+}
+
+if (IS_BROWSER) init(); else nodeSelfTest();
+</script>
+</body>
+</html>

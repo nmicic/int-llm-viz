@@ -1,0 +1,2323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weight atlas — every parameter of model.mgw</title>
+<!--
+  Copyright 2026 Nenad Mićić
+  SPDX-License-Identifier: Apache-2.0
+
+  atlas.html — the weight atlas: all 14,272 stored Q16.48 parameters of
+  third_party/int-llm/model.mgw drawn at their literal [row][col]
+  coordinates. Stored values stay BigInt end-to-end; floating point is
+  used only for pixel geometry and color mapping (marked "display-only").
+-->
+<style>
+__THEME_CSS__
+
+/* ---------- page-specific ---------- */
+#layout { display: flex; gap: 14px; align-items: flex-start; }
+#panels {
+  flex: 1 1 auto; min-width: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 12px;
+}
+#rail {
+  flex: 0 0 322px; min-width: 0;
+  position: sticky; top: 8px;
+  max-height: calc(100vh - 16px); overflow: auto;
+}
+#rail .card { margin: 0 0 12px; }
+@media (max-width: 1100px) {
+  #layout { flex-direction: column; }
+  #rail {
+    position: static; flex: 1 1 auto; width: 100%;
+    max-height: none; overflow: visible;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 12px; align-items: start;
+  }
+  #rail .card { margin: 0; }
+}
+.panel { margin: 0; min-width: 0; }
+.panel.wide { grid-column: 1 / -1; }
+.phead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ptitle {
+  background: none; border: none; padding: 1px 3px; margin-left: -3px;
+  color: var(--ink); font: 13px var(--mono); cursor: zoom-in;
+}
+.ptitle:hover { color: var(--gold); }
+.pshape { color: var(--dim); font: 11px var(--mono); }
+.psub { color: var(--dim); font-size: 11px; margin: 1px 0 7px; }
+canvas.heat, #zoomCanvas { display: block; image-rendering: pixelated; }
+canvas.hist { display: block; margin-top: 8px; }
+.pstats, .pscale {
+  font: 10px/1.5 var(--mono); color: var(--dim);
+  overflow-wrap: anywhere; margin-top: 5px;
+}
+.pstats b, .pscale b, #insBody b, #zoomReadout b, #fInfo b, #bitsInfo b {
+  color: var(--ink); font-weight: normal;
+}
+.k { color: var(--dim); }
+#insBody, #zoomReadout { font: 11px/1.6 var(--mono); overflow-wrap: anywhere; }
+#insBody .val, #zoomReadout .val { overflow-wrap: anywhere; }
+#bitsInfo, #fInfo { font: 11px/1.5 var(--mono); color: var(--dim);
+  overflow-wrap: anywhere; margin-top: 6px; }
+#bitsCanvas { display: block; margin-top: 8px; }
+.note { font-size: 11px; color: var(--dim); max-width: none; margin: 8px 0 0; }
+#controlsCard { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+#globalNote { font: 10px var(--mono); color: var(--dim); overflow-wrap: anywhere;
+  flex: 1 1 240px; min-width: 0; }
+#statusRow { margin: 0 0 8px; }
+.zoom-box { max-width: 96vw; width: auto; }
+#zoomScroll { overflow: auto; max-height: 68vh; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel); }
+#zoomHead { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+#zoomHead .spacer { flex: 1; }
+#zoomReadout { margin-top: 8px; min-height: 5.5em; }
+.helpkeys { border-collapse: collapse; font-size: 12px; }
+.helpkeys td { padding: 2px 10px 2px 0; vertical-align: top; }
+.swline { display: inline-flex; align-items: center; gap: 5px; margin-right: 12px; }
+footer { overflow-wrap: anywhere; }
+label[for] { font-size: 12px; color: var(--dim); }
+#fRange { width: 140px; vertical-align: middle; }
+
+/* ---------- derived sections (MLP layouts + hidden-coordinate swap) ---------- */
+#loBar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin: 10px 0 2px; }
+#loBar .k { font-size: 12px; }
+.lo-table { border-collapse: collapse; font: 11px/1.7 var(--mono);
+  margin: 10px 0 0; }
+.lo-table th { text-align: left; color: var(--dim); font-weight: normal;
+  padding: 1px 16px 1px 0; }
+.lo-table td { padding: 1px 16px 1px 0; vertical-align: top; cursor: pointer; }
+.lo-table td.num { text-align: right; }
+.lo-table tr.sel td { color: var(--gold); }
+.lo-table tr:hover td { color: var(--ink); }
+.lo-pairs { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 12px; }
+.lo-block { min-width: 0; max-width: 100%; }
+.lo-block .lbl { font: 11px var(--mono); color: var(--dim); margin: 0 0 4px; }
+.lo-scroll { overflow-x: auto; max-width: 100%; }
+#loReadout { font: 11px/1.6 var(--mono); overflow-wrap: anywhere;
+  min-height: 4.8em; margin-top: 10px; }
+#loReadout b { color: var(--ink); font-weight: normal; }
+.hs-legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+  margin: 10px 0 0; font: 11px var(--mono); color: var(--dim); }
+.hs-legend .sw { display: inline-block; width: 11px; height: 11px;
+  border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.hs-tensor { margin-top: 20px; }
+.hs-meta { font: 11px/1.6 var(--mono); color: var(--dim); }
+.hs-meta b { color: var(--ink); font-weight: normal; }
+.hs-readout { font: 11px/1.6 var(--mono); color: var(--dim);
+  overflow-wrap: anywhere; margin-top: 6px; min-height: 3.2em; }
+.hs-readout b { color: var(--ink); font-weight: normal; }
+@media (max-width: 480px) {
+  #panels { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<main>
+<!--UNBUILT-NOTICE--><div style="background:#3a1420;border:1px solid #7a2b3b;color:#ffd6d6;font:14px/1.6 ui-monospace,Menlo,Consolas,monospace;padding:12px 16px;border-radius:10px;margin:12px 0;max-width:72ch">
+You are looking at the <b>unbuilt source template</b> (web/atlas.html).
+Its data placeholders are not filled in, so no checkpoint, styling, or
+visualization can appear here. Open the built page
+<a href="../site/atlas.html" style="color:#ffd166">site/atlas.html</a>
+instead &mdash; it is committed; <b>make</b> regenerates it.
+</div><!--/UNBUILT-NOTICE-->
+  <nav class="topnav" aria-label="site">
+    <a href="index.html">index</a>
+    <a href="atlas.html" class="here" aria-current="page">atlas</a>
+    <a href="trace.html">trace</a>
+    <a href="space.html">space</a>
+    <a href="weights.html">weights</a>
+  </nav>
+
+  <h1>Weight atlas</h1>
+  <p class="sub">All 14,272 stored Q16.48 weights of <span class="mono">model.mgw</span>,
+    each drawn at its literal [row][col] coordinate. This page is 100% literal:
+    every mark is a stored value at its stored index — nothing derived, nothing renamed.
+    Two clearly labeled exceptions sit at the bottom: derived sections that re-order
+    (never alter) stored tensors — <a href="#loCard" id="jumpLo">four MLP neuron
+    layouts</a>, and <a href="#hsCard" id="jumpHs">one residual-coordinate swap
+    through all nine matrices</a>. Press <kbd>?</kbd> for help.</p>
+
+  <div class="row" id="statusRow">
+    <span class="badge" id="selfCheck">self-check: running…</span>
+    <span class="badge info">literal coordinates — nothing derived</span>
+    <span class="badge info">BigInt end-to-end · Q16.48</span>
+  </div>
+
+  <div class="card" id="controlsCard">
+    <span class="k" style="font-size:12px">color scale</span>
+    <button id="scalePer" aria-pressed="true" class="on">per-tensor</button>
+    <button id="scaleGlobal" aria-pressed="false">shared global</button>
+    <span id="globalNote"></span>
+    <button id="helpBtn" aria-label="open help overlay" title="help">?</button>
+  </div>
+
+  <div id="layout">
+    <div id="panels" aria-label="tensor heatmap panels"></div>
+    <aside id="rail">
+      <div class="card" id="inspectorCard">
+        <h2 style="margin-top:0">cell inspector
+          <span class="badge info" id="pinBadge" hidden>pinned</span></h2>
+        <div id="insBody" aria-live="polite"></div>
+        <p class="note">hover a cell, or <kbd>Tab</kbd> to a panel and use arrow keys.
+          <kbd>Enter</kbd> pins / unpins.</p>
+      </div>
+      <div class="card" id="bitsCard">
+        <h2 style="margin-top:0">bits</h2>
+        <label for="bitsSel">tensor</label>
+        <select id="bitsSel" aria-label="tensor for bit charts"></select>
+        <canvas id="bitsCanvas" tabindex="0"
+          aria-label="bit occupancy chart; focus and use left and right arrows to inspect bit positions"></canvas>
+        <div id="bitsInfo"></div>
+        <div style="margin-top:10px">
+          <label for="fRange">F rung</label>
+          <input type="range" id="fRange" min="8" max="48" step="1" value="48"
+            aria-label="fraction bits kept, 8 to 48">
+          <span class="mono" id="fVal" style="font-size:12px">F=48</span>
+        </div>
+        <div id="fInfo"></div>
+        <p class="note">This preview only rounds stored weights (exact BigInt
+          round-half-to-even to F fraction bits); it does <b>not</b> run inference at
+          reduced precision. Context: the sibling repo
+          <span class="mono">int-llm-precision-ladder</span> reports that the big
+          model's top-1 answers survive down to F12 fraction bits — that is their
+          reported result, cited here, not something this page verifies.</p>
+      </div>
+    </aside>
+  </div>
+
+  <section class="card" id="loCard" aria-label="MLP neuron layout comparison — derived view">
+    <h2 style="margin-top:0">MLP neuron order — one checkpoint, four physical layouts</h2>
+    <p class="psub" style="max-width:80ch">
+      The one <b>derived view</b> on this page, labeled as such. The sibling
+      <span class="mono">int-llm-coordinate-permutation</span> repo reorders this
+      checkpoint's 128 MLP neurons (the "hidden unit" axis of the two panels above)
+      into three alternative physical layouts. A layout is a pure re-indexing:
+      physical slot <span class="mono">j</span> holds original neuron
+      <span class="mono">new_to_old[j]</span> — the <span class="mono">mlp_fc1</span> row
+      and the matching <span class="mono">mlp_fc2</span> column move together, and no
+      stored value changes. The self-check above re-permutes the embedded tensors per
+      order and matches their checksums against the variant checkpoints this repo's
+      C oracle replayed bit-identically; it also recomputes every adjacency score in
+      exact BigInt arithmetic.</p>
+    <div id="loBar">
+      <span class="k">right-hand order</span>
+      <button data-order="original" aria-pressed="true" class="on">original</button>
+      <button data-order="smooth" aria-pressed="false">smooth</button>
+      <button data-order="spread" aria-pressed="false">spread</button>
+      <button data-order="random" aria-pressed="false">random</button>
+      <span class="badge info" id="loSel"></span>
+    </div>
+    <table class="lo-table" id="loTable" aria-label="layout scores"></table>
+    <div class="lo-pairs">
+      <div class="lo-block">
+        <div class="lbl">mlp_fc1 — original order (rows = neurons)</div>
+        <canvas id="loFc1L" class="heat" tabindex="0"
+          aria-label="mlp_fc1 in original order; rows are neurons; up and down arrows step through neurons"></canvas>
+      </div>
+      <div class="lo-block">
+        <div class="lbl" id="loLblFc1R"></div>
+        <canvas id="loFc1R" class="heat" tabindex="0"
+          aria-label="mlp_fc1 in the selected order; rows are physical slots; up and down arrows step through slots"></canvas>
+      </div>
+      <div class="lo-block">
+        <div class="lbl">mlp_fc2 — original order (columns = neurons)</div>
+        <div class="lo-scroll"><canvas id="loFc2L" class="heat" tabindex="0"
+          aria-label="mlp_fc2 in original order; columns are neurons; left and right arrows step through neurons"></canvas></div>
+        <div class="lbl" id="loLblFc2R" style="margin-top:10px"></div>
+        <div class="lo-scroll"><canvas id="loFc2R" class="heat" tabindex="0"
+          aria-label="mlp_fc2 in the selected order; columns are physical slots; left and right arrows step through slots"></canvas></div>
+      </div>
+    </div>
+    <div id="loReadout" aria-live="polite"></div>
+    <p class="note" id="loNote"></p>
+  </section>
+
+  <section class="card" id="hsCard" aria-label="residual coordinate swap — derived view">
+    <h2 style="margin-top:0">Residual coordinate swap — one transposition through all nine matrices</h2>
+    <p class="psub" style="max-width:80ch">
+      The page's second <b>derived view</b>, labeled as such. The sibling
+      <span class="mono">int-llm-coordinate-permutation</span> repo also swaps two
+      coordinates of the 32-wide residual (hidden) basis — lane <span class="mono">0</span>
+      with lane <span class="mono">31</span> — through <b>every</b> learned matrix at
+      once: tensors that carry the residual axis on their <b>columns</b>
+      (wte, wpe, lm_head, wq, wk, wv, fc1) swap two columns; tensors that carry it on
+      their <b>rows</b> (wo, fc2) swap two rows. Physical index
+      <span class="mono">j</span> holds original coordinate
+      <span class="mono">new_to_old[j]</span>; 892 of the 14,272 stored positions move
+      and no value changes. Applied consistently everywhere, the swap preserves the
+      model function exactly — this repo's C oracle replayed the swapped checkpoint
+      bit-identically. The self-check above re-permutes all nine embedded tensors and
+      matches their checksums against that C-verified variant. All nine pairs are
+      drawn below one another; in every pane the green lane is original coordinate 0
+      and the orange lane is original coordinate 31, so the trade itself is visible:
+      they sit at positions 0 and 31 in the original pane and at 31 and 0 in the
+      swapped one.</p>
+    <div class="hs-legend" id="hsLegend" aria-label="trading-lane colors">
+      <span><i class="sw" style="background:#79e6b0"></i>original coordinate 0</span>
+      <span><i class="sw" style="background:#ffb86b"></i>original coordinate 31</span>
+      <span>the two highlighted lanes trade places between the panes of every pair;
+        each lane keeps its exact stored bytes either way</span>
+    </div>
+    <table class="lo-table" id="hsTable" aria-label="per-tensor swap effect"></table>
+    <p class="note" id="hsHint">All nine matrix pairs are drawn below — click a
+      table row to jump to its pair. Hover any pane, or focus one and use arrow
+      keys, to follow one residual coordinate across the swap;
+      <kbd>Esc</kbd> clears.</p>
+    <div id="hsPairs"></div>
+    <p class="note" id="hsNote"></p>
+  </section>
+
+  <footer id="foot"></footer>
+</main>
+
+<div class="tip" id="tip" role="status"></div>
+
+<div class="help-overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-label="help">
+  <div class="help-box" id="helpBox" tabindex="-1">
+    <h2>Weight atlas — help</h2>
+    <p>Every panel is one stored tensor of <span class="mono">model.mgw</span>.
+      Cell (r,c) is the stored scalar <span class="mono">raw[r*cols+c]</span>;
+      r increases downward from 0, c rightward from 0. Everything on this page is
+      literal: stored values at stored coordinates. The only derived quantities are
+      exact integer aggregations (counts, min, max, BigInt sums), and they are
+      labeled as such. No semantic claims are made about what any weight "does".</p>
+
+    <h3>Q16.48 fixed point</h3>
+    <p class="mono" style="font-size:12px">value = raw / 2<sup>48</sup> ·
+      FP_ONE = 281474976710656 · raw is a signed 64-bit integer</p>
+    <p>Readouts show three exact forms: the raw int64, its two's-complement hex
+      image, and the exact decimal (finite, at most 48 fraction digits). Every
+      weight satisfies |raw| &lt; 2<sup>53</sup>, so its float64 image is exact —
+      but floats are used only for pixel geometry and color, never for values.</p>
+
+    <h3>Color</h3>
+    <p><span class="swline"><span class="sw" style="background:#4dabf7"></span>negative</span>
+      <span class="swline"><span class="sw" style="background:#161b28;border:1px solid #262c3a"></span>near zero (neutral dark)</span>
+      <span class="swline"><span class="sw" style="background:#ffa94d"></span>positive</span></p>
+    <p>The diverging ramp is linear in value and symmetric about zero; a stored
+      zero gets no ink (panel background). Ramp endpoints are ±(active scale max).
+      <b>per-tensor</b> scale (default): each panel uses its own max |value|;
+      <b>shared global</b> scale: all panels use the one global max |value|. The
+      active ± endpoint is printed under each panel as an exact decimal. Numbers
+      are always ink-colored monospace, never ramp-colored.</p>
+
+    <h3>Head grouping</h3>
+    <p><span class="swline"><span class="sw" style="background:#fa5252"></span>h0</span>
+      <span class="swline"><span class="sw" style="background:#fab005"></span>h1</span>
+      <span class="swline"><span class="sw" style="background:#38d9a9"></span>h2</span>
+      <span class="swline"><span class="sw" style="background:#4dabf7"></span>h3</span></p>
+    <p>In <span class="mono">attn_wq/wk/wv</span>, output rows group by head
+      (head h owns rows h·8 … h·8+7): colored strips and <span class="mono">h0…h3</span>
+      labels sit left of the rows. In <span class="mono">attn_wo</span> the input is
+      the concatenation of head outputs, so the grouping is on <b>columns</b> and
+      strips sit on top. Strip color is only a redundant cue — the text label is
+      the encoding.</p>
+
+    <h3>Histogram strip</h3>
+    <p>x = value, symmetric around 0, endpoints ±(active scale max) — the exact
+      endpoint is the decimal printed on the panel's scale line; the axis shows a
+      shortened display form marked ≈. 64 equal bins, binned with exact BigInt
+      arithmetic. y = linear count; the peak bin count is printed. Bars left of
+      the 0 tick hold negative values (blue), right of it non-negative (amber).
+      Under it: exact min raw, max raw, and the exact BigInt Σ of raw values —
+      the Σ of Q16.48 raws is itself a Q16.48 quantity and is printed via its
+      exact decimal. <b>No means are shown anywhere: division would not be
+      exact, so it is simply not done.</b></p>
+
+    <h3>Bits panel</h3>
+    <p>Bit occupancy: for bit positions 0…62 of |raw|, the count of the selected
+      tensor's weights with that bit set. Bit b has place value
+      2<sup>b−48</sup>; the gold line marks bit 48 = the 1.0 boundary between
+      fraction bits (0…47) and integer bits (48…62, shaded). The F-rung preview
+      rounds each stored weight to F fraction bits with exact BigInt
+      round-half-to-even and counts how many would change; in the detail zoom,
+      cells that would change get a pink outline
+      <span class="sw" style="background:none;border:1px solid #f783ac"></span>.
+      It only rounds stored weights — it does not run inference. The F12 claim
+      cited on the panel is the sibling repo's reported result, not verified here.</p>
+
+    <h3>MLP neuron order (bottom section)</h3>
+    <p>The page's one derived view, labeled as such. The two MLP tensors are shown
+      re-indexed by four vendored neuron orders (original / smooth / spread / random)
+      from the sibling coordinate-permutation repo: physical slot j displays original
+      neuron <span class="mono">new_to_old[j]</span>; the fc1 row and fc2 column move
+      together and no stored value is altered — which is also why the per-tensor color
+      scale is identical on both sides of a pair (same value multiset). The adjacency
+      score is the exact integer Σ of L1 distances between physically adjacent neurons'
+      profiles (the neuron's fc1 row followed by its fc2 column, 64 ints). It is a
+      layout score only — not parameter density, not measured performance. The
+      self-check re-permutes the embedded tensors and matches their checksums against
+      the variant checkpoints replayed bit-identically by the build's C oracle.
+      Deep link: <span class="mono">atlas.html#order=smooth</span>.</p>
+
+    <h3>Residual coordinate swap (bottom section)</h3>
+    <p>The page's second derived view, labeled as such. One vendored transposition of
+      residual coordinates 0 and 31 is applied to the residual axis of all nine
+      learned tensors at once — columns of wte, wpe, lm_head, wq, wk, wv, fc1; rows
+      of wo, fc2. Physical index j displays original coordinate
+      <span class="mono">new_to_old[j]</span>; 892 of the 14,272 stored positions move
+      and none changes value (the shared per-tensor color scale is again justified by
+      the unchanged multiset). Applied consistently everywhere, the swap preserves the
+      model function exactly: the build's C oracle replayed the swapped checkpoint
+      bit-identically, with each step's six residual-basis vectors exactly reindexed.
+      The self-check re-permutes all nine embedded tensors and matches their
+      checksums against that C-verified variant. All nine matrix pairs are drawn on
+      the page at once; the trading lanes are tinted by <b>original</b> coordinate
+      (green = 0, orange = 31), so the green lane sits at position 0 in an original
+      pane and at position 31 in a swapped pane. Deep links:
+      <span class="mono">atlas.html#hidden</span> jumps to the section,
+      <span class="mono">atlas.html#hidden=fc2</span> to one pair.</p>
+
+    <h3>Cursor marks</h3>
+    <p><span class="sw" style="background:none;border:1px solid #ffffff"></span>
+      white box = cell cursor ·
+      <span class="sw" style="background:none;border:1px solid #ffd166"></span>
+      gold box = pinned cell ·
+      <span class="sw" style="background:none;border:1px solid #f783ac"></span>
+      pink outline (zoom) = cell would change at the chosen F rung.</p>
+
+    <h3>Keyboard</h3>
+    <table class="helpkeys">
+      <tr><td><kbd>?</kbd></td><td>toggle this help</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>close help / close zoom / unpin inspector</td></tr>
+      <tr><td><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>move between panels (canvases are focusable)</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>→</kbd></td><td>move the cell cursor on the focused panel</td></tr>
+      <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>first / last column</td></tr>
+      <tr><td><kbd>PgUp</kbd> / <kbd>PgDn</kbd></td><td>jump 8 rows up / down</td></tr>
+      <tr><td><kbd>Enter</kbd> or <kbd>Space</kbd></td><td>pin / unpin the inspector on the cursor cell (click does the same)</td></tr>
+      <tr><td><kbd>Z</kbd></td><td>detail zoom of the focused panel (clicking a panel title also zooms)</td></tr>
+      <tr><td><kbd>G</kbd></td><td>toggle per-tensor / shared global color scale</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>F rung down / up (bits preview)</td></tr>
+      <tr><td><kbd>←</kbd> / <kbd>→</kbd> on bits chart</td><td>inspect bit positions</td></tr>
+      <tr><td><kbd>↑</kbd><kbd>↓</kbd> / <kbd>←</kbd><kbd>→</kbd> on a layout-pair panel</td><td>step through neurons; <kbd>Esc</kbd> clears the highlight</td></tr>
+      <tr><td><kbd>↑</kbd><kbd>↓</kbd> / <kbd>←</kbd><kbd>→</kbd> on a swap pane</td><td>step through residual coordinates; <kbd>Esc</kbd> clears the highlight</td></tr>
+    </table>
+    <p class="note">Close with <kbd>Esc</kbd> or <kbd>?</kbd>.</p>
+  </div>
+</div>
+
+<div class="help-overlay" id="zoomOverlay" role="dialog" aria-modal="true" aria-label="tensor detail zoom">
+  <div class="help-box zoom-box">
+    <div id="zoomHead">
+      <span class="ptitle mono" id="zoomName" style="font-size:15px;cursor:default"></span>
+      <span class="pshape" id="zoomShape"></span>
+      <span class="badge info" id="zoomFBadge"></span>
+      <span class="spacer"></span>
+      <button id="zoomClose" aria-label="close zoom">Esc ✕</button>
+    </div>
+    <div class="psub" id="zoomSub"></div>
+    <div id="zoomScroll"><canvas id="zoomCanvas" tabindex="0"></canvas></div>
+    <div id="zoomReadout" aria-live="polite"></div>
+  </div>
+</div>
+
+<script>
+__MGW_JS__
+</script>
+<script>
+"use strict";
+/*
+ * Weight atlas page code.
+ * Layer 1 (below): pure computation — no DOM, runs in Node for the self-test.
+ * Layer 2: browser UI (init and friends), touched only when `document` exists.
+ * Top-level names here must not collide with mgw.js globals
+ * (Q48, fnv1a64, dotExact, b64ToBytes, parseMGW).
+ */
+
+const MGW_B64 = "__MGW_B64__";
+const SUMMARY = __SUMMARY_JSON__;
+const LAYOUTS = __LAYOUTS_JSON__;
+const HIDDEN = __HIDDEN_JSON__;
+
+/* ---------- fixed encodings (documented in help overlay) ---------- */
+const TENSOR_ORDER = [
+  "wte", "wpe", "lm_head",
+  "layers.0.attn_wq", "layers.0.attn_wk", "layers.0.attn_wv",
+  "layers.0.attn_wo", "layers.0.mlp_fc1", "layers.0.mlp_fc2",
+];
+const HEAD_COLORS = ["#fa5252", "#fab005", "#38d9a9", "#4dabf7"]; /* h0..h3 fixed */
+const RAMP_NEG = [77, 171, 247];    /* #4dabf7 negative pole            */
+const RAMP_POS = [255, 169, 77];    /* #ffa94d positive pole            */
+const RAMP_ZERO = [17, 21, 31];     /* #11151f panel bg: zero = no ink  */
+const INK = "#cdd6f4", DIM = "#7f849c", LINE = "#262c3a";
+const CHANGED_OUTLINE = "#f783ac";  /* F-rung changed cells (zoom)      */
+const MONO_STACK = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+const HIST_BINS = 64;
+
+/* Panel metadata: expected shapes (asserted against the parsed file) and the
+ * literal meaning of each axis. maxH bounds the grid-view heatmap height. */
+const PANEL_META = {
+  "wte":              { rows: 27,  cols: 32,  tokenRows: true,  headAxis: null,
+    maxH: 330, wide: false,
+    sub: "row = token 'a'…'z', BOS · col = residual dim 0…31" },
+  "wpe":              { rows: 8,   cols: 32,  tokenRows: false, headAxis: null,
+    maxH: 330, wide: false,
+    sub: "row = position 0…7 · col = residual dim 0…31" },
+  "lm_head":          { rows: 27,  cols: 32,  tokenRows: true,  headAxis: null,
+    maxH: 330, wide: false,
+    sub: "row = output token 'a'…'z', BOS · col = residual dim 0…31" },
+  "layers.0.attn_wq": { rows: 32,  cols: 32,  tokenRows: false, headAxis: "rows",
+    maxH: 330, wide: false,
+    sub: "row = output dim 0…31, grouped by head (8 rows each) · col = input residual dim" },
+  "layers.0.attn_wk": { rows: 32,  cols: 32,  tokenRows: false, headAxis: "rows",
+    maxH: 330, wide: false,
+    sub: "row = output dim 0…31, grouped by head (8 rows each) · col = input residual dim" },
+  "layers.0.attn_wv": { rows: 32,  cols: 32,  tokenRows: false, headAxis: "rows",
+    maxH: 330, wide: false,
+    sub: "row = output dim 0…31, grouped by head (8 rows each) · col = input residual dim" },
+  "layers.0.attn_wo": { rows: 32,  cols: 32,  tokenRows: false, headAxis: "cols",
+    maxH: 330, wide: false,
+    sub: "row = output residual dim · col = input dim 0…31, grouped by head (concat of head outputs)" },
+  "layers.0.mlp_fc1": { rows: 128, cols: 32,  tokenRows: false, headAxis: null,
+    maxH: 430, wide: false,
+    sub: "row = hidden unit 0…127 · col = residual dim 0…31" },
+  "layers.0.mlp_fc2": { rows: 32,  cols: 128, tokenRows: false, headAxis: null,
+    maxH: 330, wide: true,
+    sub: "row = residual dim 0…31 · col = hidden unit 0…127" },
+};
+
+/* =====================================================================
+ * Layer 1 — pure computation (BigInt-exact; no DOM; used by nodeSelfTest)
+ * ===================================================================== */
+
+function absBig(v) { return v < 0n ? -v : v; }
+
+/* Exact per-tensor stats: min raw, max raw, max |raw|, Σ raw (all BigInt). */
+function tensorStats(raw) {
+  let mn = raw[0], mx = raw[0], sum = 0n, ma = 0n;
+  for (let i = 0; i < raw.length; i++) {
+    const v = raw[i];
+    if (v < mn) mn = v;
+    if (v > mx) mx = v;
+    sum += v;
+    const a = v < 0n ? -v : v;
+    if (a > ma) ma = a;
+  }
+  return { minRaw: mn, maxRaw: mx, maxAbsRaw: ma, sumRaw: sum };
+}
+
+/* Exact histogram over the symmetric domain [−M, +M], nbins equal bins.
+ * Bin index is computed entirely in BigInt: floor((v+M)·nbins / 2M),
+ * clamped so +M lands in the last bin. Exact — no floats involved. */
+function histCounts(raw, M, nbins) {
+  const counts = new Uint32Array(nbins);
+  if (M <= 0n) { counts[nbins >> 1] = raw.length; return counts; }
+  const twoM = 2n * M, NB = BigInt(nbins);
+  for (let i = 0; i < raw.length; i++) {
+    let idx = Number(((raw[i] + M) * NB) / twoM); /* exact: quotient < 2·nbins */
+    if (idx < 0) idx = 0;
+    if (idx >= nbins) idx = nbins - 1;
+    counts[idx]++;
+  }
+  return counts;
+}
+
+/* For bit positions 0..62 of |raw|: how many elements have that bit set. */
+function bitOccupancy(raw) {
+  const counts = new Uint32Array(63);
+  for (let i = 0; i < raw.length; i++) {
+    let a = raw[i] < 0n ? -raw[i] : raw[i];
+    let b = 0;
+    while (a > 0n && b < 63) {
+      if (a & 1n) counts[b]++;
+      a >>= 1n;
+      b++;
+    }
+  }
+  return counts;
+}
+
+/* Exact BigInt round-half-to-even of a Q16.48 raw to F fraction bits
+ * (8 <= F <= 48). Result is returned at the original Q16.48 scale.
+ * drop = 48−F low bits are rounded away; arithmetic shift makes the
+ * remainder non-negative, so the same tie rule covers negatives. */
+function roundRawToF(rawV, F) {
+  const drop = 48 - F;
+  if (drop <= 0) return rawV;
+  const d = BigInt(drop);
+  let q = rawV >> d;                    /* floor division by 2^drop */
+  const rem = rawV - (q << d);          /* in [0, 2^drop) */
+  const half = 1n << (d - 1n);
+  if (rem > half) q += 1n;
+  else if (rem === half) q += q & 1n;   /* tie -> even */
+  return q << d;
+}
+
+/* How many elements of raw would change when rounded to F fraction bits. */
+function countChangedAtF(raw, F) {
+  let n = 0;
+  for (let i = 0; i < raw.length; i++)
+    if (roundRawToF(raw[i], F) !== raw[i]) n++;
+  return n;
+}
+
+/* Per-cell changed mask at rung F (for the zoom outlines). */
+function changedMaskAtF(raw, F) {
+  const m = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++)
+    if (roundRawToF(raw[i], F) !== raw[i]) m[i] = 1;
+  return m;
+}
+
+/* Diverging ramp — display-only: converts BigInt raws through Number for
+ * color mapping. Linear in value, symmetric about zero; exact zero gets
+ * the panel background (no ink). Returns RGBA bytes, one px per cell. */
+function buildCellImage(raw, maxAbsRaw) {
+  const n = raw.length;
+  const px = new Uint8ClampedArray(n * 4);
+  const M = maxAbsRaw > 0n ? Q48.toNumber(maxAbsRaw) : 1; /* display-only */
+  for (let i = 0; i < n; i++) {
+    let r = RAMP_ZERO[0], g = RAMP_ZERO[1], b = RAMP_ZERO[2];
+    if (raw[i] !== 0n) {
+      const v = Q48.toNumber(raw[i]) / M; /* display-only */
+      const t = v < -1 ? -1 : (v > 1 ? 1 : v);
+      const pole = t < 0 ? RAMP_NEG : RAMP_POS;
+      const a = t < 0 ? -t : t;
+      r = RAMP_ZERO[0] + (pole[0] - RAMP_ZERO[0]) * a;
+      g = RAMP_ZERO[1] + (pole[1] - RAMP_ZERO[1]) * a;
+      b = RAMP_ZERO[2] + (pole[2] - RAMP_ZERO[2]) * a;
+    }
+    const o = i * 4;
+    px[o] = r; px[o + 1] = g; px[o + 2] = b; px[o + 3] = 255;
+  }
+  return px;
+}
+
+/* Literal meaning of a cell's coordinates. Pure; uchars from the model. */
+function tokenLabel(i, uchars) {
+  return i === 26 ? "BOS (26)" : "'" + uchars[i] + "' (" + i + ")";
+}
+function describeCell(name, r, c, uchars) {
+  const hd = (i) => ({ h: i >> 3, lo: (i >> 3) * 8, hi: (i >> 3) * 8 + 7, d: i & 7 });
+  switch (name) {
+    case "wte":
+      return { row: "token " + tokenLabel(r, uchars), col: "residual dim " + c, head: null };
+    case "wpe":
+      return { row: "position " + r, col: "residual dim " + c, head: null };
+    case "lm_head":
+      return { row: "output token " + tokenLabel(r, uchars), col: "residual dim " + c, head: null };
+    case "layers.0.attn_wq":
+    case "layers.0.attn_wk":
+    case "layers.0.attn_wv": {
+      const h = hd(r);
+      return { row: "output dim " + r, col: "input residual dim " + c,
+               head: "head h" + h.h + " (rows " + h.lo + "–" + h.hi + ", in-head dim " + h.d + ")" };
+    }
+    case "layers.0.attn_wo": {
+      const h = hd(c);
+      return { row: "output residual dim " + r, col: "input dim " + c + " (head-output concat)",
+               head: "head h" + h.h + " (cols " + h.lo + "–" + h.hi + ", in-head dim " + h.d + ")" };
+    }
+    case "layers.0.mlp_fc1":
+      return { row: "hidden unit " + r, col: "residual dim " + c, head: null };
+    case "layers.0.mlp_fc2":
+      return { row: "residual dim " + r, col: "hidden unit " + c, head: null };
+  }
+  return { row: "row " + r, col: "col " + c, head: null };
+}
+
+/* ---------- MLP layout set (LAYOUTS) — pure helpers ----------
+ * A layout is a pure re-indexing of the 128 MLP neurons: physical slot j
+ * of a variant holds original neuron new_to_old[j]. mlp_fc1 permutes by
+ * row (neuron = row), mlp_fc2 by column (neuron = column); the row and
+ * the column of one neuron move together. No stored value changes. */
+
+/* Permuted mlp_fc1 (128×32): output row j = original row order[j]. */
+function permuteFc1Rows(raw, order) {
+  const out = new BigInt64Array(128 * 32);
+  for (let j = 0; j < 128; j++) {
+    const src = order[j];
+    for (let c = 0; c < 32; c++) out[j * 32 + c] = raw[src * 32 + c];
+  }
+  return out;
+}
+
+/* Permuted mlp_fc2 (32×128): output column j = original column order[j]. */
+function permuteFc2Cols(raw, order) {
+  const out = new BigInt64Array(32 * 128);
+  for (let r = 0; r < 32; r++)
+    for (let j = 0; j < 128; j++) out[r * 128 + j] = raw[r * 128 + order[j]];
+  return out;
+}
+
+/* Neuron profile: fc1 row n (32 ints) followed by fc2 column n (32 ints). */
+function neuronProfiles(fc1raw, fc2raw) {
+  const ps = [];
+  for (let n = 0; n < 128; n++) {
+    const p = new BigInt64Array(64);
+    for (let c = 0; c < 32; c++) p[c] = fc1raw[n * 32 + c];
+    for (let r = 0; r < 32; r++) p[32 + r] = fc2raw[r * 128 + n];
+    ps.push(p);
+  }
+  return ps;
+}
+
+/* Exact layout score: Σ over adjacent physical slots of the L1 distance
+ * between their neurons' 64-int profiles. All BigInt; matches the
+ * generator's metric (adjacent-neuron-weight-profile-l1). */
+function adjacencyScore(profiles, order) {
+  let s = 0n;
+  for (let j = 0; j + 1 < order.length; j++) {
+    const a = profiles[order[j]], b = profiles[order[j + 1]];
+    for (let k = 0; k < 64; k++) s += absBig(a[k] - b[k]);
+  }
+  return s;
+}
+
+/* Inverse map: physical slot of each original neuron. */
+function invertOrder(order) {
+  const pos = new Int32Array(128).fill(-1);
+  for (let j = 0; j < 128; j++) pos[order[j]] = j;
+  return pos;
+}
+
+/* ---------- hidden-coordinate swap (HIDDEN) — pure helpers ----------
+ * One global permutation of the 32 residual (hidden) coordinates, applied
+ * to every learned tensor at once: tensors carry the residual axis either
+ * on columns (wte, wpe, lm_head, wq, wk, wv, fc1) or on rows (wo, fc2).
+ * Physical index j of the variant holds original coordinate new_to_old[j].
+ * Same bytes, new positions — never new values. */
+
+/* Permute the residual axis of a rows×cols tensor by `order`. */
+function permuteHiddenAxis(raw, rows, cols, axis, order) {
+  const out = new BigInt64Array(rows * cols);
+  if (axis === "column") {
+    for (let r = 0; r < rows; r++)
+      for (let j = 0; j < cols; j++) out[r * cols + j] = raw[r * cols + order[j]];
+  } else {
+    for (let j = 0; j < rows; j++) {
+      const src = order[j];
+      for (let c = 0; c < cols; c++) out[j * cols + c] = raw[src * cols + c];
+    }
+  }
+  return out;
+}
+
+/* How many positions hold a different stored value in b than in a. */
+function countChangedPositions(a, b) {
+  let n = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++;
+  return n;
+}
+
+/* =====================================================================
+ * Self-test — real assertions, shared by Node (nodeSelfTest) and browser.
+ * Every ok() call is one counted check; any failure throws.
+ * ===================================================================== */
+function assertAll(model, summary) {
+  let n = 0;
+  const ok = (cond, msg) => {
+    if (!cond) throw new Error("self-check failed: " + msg);
+    n++;
+  };
+
+  ok(!!(model && model.tensors && model.byName), "parseMGW succeeded");
+  ok(model.tensors.length === 11, "file has 11 tensors");
+  ok(model.numWeights === 14272, "numWeights === 14272");
+  ok(model.numWeights === summary.num_params, "numWeights === SUMMARY.num_params");
+  ok(model.fileSize === summary.model_bytes, "byte size matches SUMMARY.model_bytes");
+  ok(model.uchars === summary.uchars, "tokenizer.uchars matches SUMMARY");
+  ok(model.bos === summary.config.bos && model.vocabSize === summary.config.vocab_size,
+     "BOS id and vocab size match SUMMARY");
+  { const c = model.config, sc = summary.config;
+    ok(c.hidden_dim === sc.n_embd && c.num_heads === sc.n_head &&
+       c.head_dim === sc.head_dim && c.num_layers === sc.n_layer &&
+       c.intermediate_dim === sc.mlp_dim && c.max_seq_len === sc.block_size,
+       "parsed config matches SUMMARY.config"); }
+  ok(model.weights.length === 9, "9 weight tensors");
+  ok(model.weights.map((t) => t.name).join("|") === TENSOR_ORDER.join("|"),
+     "weight tensor file order matches the atlas panel order");
+  ok(summary.trace_pass === true && summary.trace_steps > 0,
+     "C-runtime trace reported pass with > 0 steps");
+
+  for (const nm of TENSOR_ORDER) {
+    const t = model.byName.get(nm), meta = PANEL_META[nm];
+    ok(!!t, nm + " present");
+    ok(t.rows === meta.rows && t.cols === meta.cols,
+       nm + " shape is " + meta.rows + "x" + meta.cols);
+  }
+
+  /* checksum proof: page parsed the same bytes the original C loader used */
+  for (const nm of TENSOR_ORDER) {
+    const t = model.byName.get(nm);
+    ok(fnv1a64(t.raw).toString() === summary.tensor_fnv1a64[nm],
+       "fnv1a64(" + nm + ") matches the C loader's checksum");
+  }
+
+  { let all = true;
+    for (const t of model.weights)
+      for (let i = 0; i < t.raw.length; i++)
+        if (!Q48.isExactAsNumber(t.raw[i])) { all = false; break; }
+    ok(all, "every weight is float64-exact (|raw| < 2^53)"); }
+
+  for (const nm of TENSOR_ORDER) {
+    const t = model.byName.get(nm);
+    const st = tensorStats(t.raw);
+    const bins = histCounts(t.raw, st.maxAbsRaw, HIST_BINS);
+    let s = 0;
+    for (let i = 0; i < bins.length; i++) s += bins[i];
+    ok(s === t.numElements, "histogram bins of " + nm + " sum to " + t.numElements);
+  }
+
+  { let tot = 0;
+    for (const t of model.weights) tot += countChangedAtF(t.raw, 48);
+    ok(tot === 0, "round-half-even at F=48 changes 0 weights"); }
+
+  { const t = model.byName.get("wte");
+    let prev = Infinity, mono = true;
+    for (let F = 8; F <= 48; F++) {
+      const ch = countChangedAtF(t.raw, F);
+      if (ch > prev) mono = false;
+      prev = ch;
+    }
+    ok(mono, "changed-count is non-increasing as F goes 8 -> 48 (wte)"); }
+
+  ok(roundRawToF(1n, 47) === 0n && roundRawToF(3n, 47) === 4n &&
+     roundRawToF(-1n, 47) === 0n && roundRawToF(-3n, 47) === -4n,
+     "round-half-to-even tie cases (±0.5 ulp at F=47)");
+
+  ok(Q48.toDecimalString(model.byName.get("wte").raw[0]) ===
+     "0.230790096776512854148677433840930461883544921875",
+     "known value: wte[0][0] exact decimal");
+
+  { const t = model.byName.get("wte");
+    let direct = 0n;
+    for (let i = 0; i < t.raw.length; i++) direct += t.raw[i];
+    let byRows = 0n;
+    for (let r = 0; r < t.rows; r++) {
+      let rs = 0n;
+      for (let c = 0; c < t.cols; c++) rs += t.raw[r * t.cols + c];
+      byRows += rs;
+    }
+    ok(direct === byRows && direct === tensorStats(t.raw).sumRaw,
+       "exact Σ raw of wte agrees between direct and per-row summation"); }
+
+  { const t = model.byName.get("wte");
+    let sAbs = 0n;
+    for (let i = 0; i < t.raw.length; i++) sAbs += absBig(t.raw[i]);
+    const occ = bitOccupancy(t.raw);
+    let s2 = 0n;
+    for (let b = 0; b < 63; b++) s2 += BigInt(occ[b]) << BigInt(b);
+    ok(sAbs === s2, "bit occupancy reconstructs Σ|raw| exactly (wte)"); }
+
+  /* ---- MLP layout set: re-prove the embedded orders against this parse ---- */
+  {
+    ok(LAYOUTS.format === "int-llm-viz-layouts-v1", "LAYOUTS format tag");
+    ok(LAYOUTS.provenance.source_sha256 === summary.model_sha256,
+       "LAYOUTS provenance names this checkpoint's sha256");
+    ok(LAYOUTS.variants.map((v) => v.name).join("|") ===
+       "original|smooth|spread|random",
+       "LAYOUTS holds the four variants in canonical order");
+    const fc1 = model.byName.get("layers.0.mlp_fc1");
+    const fc2 = model.byName.get("layers.0.mlp_fc2");
+    const profs = neuronProfiles(fc1.raw, fc2.raw);
+    for (const v of LAYOUTS.variants) {
+      const ord = v.new_to_old;
+      const seen = new Uint8Array(128);
+      let bij = ord.length === 128;
+      if (bij) for (const o of ord) {
+        if (!Number.isInteger(o) || o < 0 || o > 127 || seen[o]) { bij = false; break; }
+        seen[o] = 1;
+      }
+      ok(bij, v.name + ".new_to_old is a bijection on 0…127");
+      let moved = 0;
+      for (let j = 0; j < 128; j++) if (ord[j] !== j) moved++;
+      ok(moved === v.moved_neurons,
+         v.name + " moves exactly " + v.moved_neurons + " neurons");
+      ok(fnv1a64(permuteFc1Rows(fc1.raw, ord)).toString() ===
+         v.fnv1a64["layers.0.mlp_fc1"],
+         v.name + ": re-permuted fc1 checksum matches the C-verified variant");
+      ok(fnv1a64(permuteFc2Cols(fc2.raw, ord)).toString() ===
+         v.fnv1a64["layers.0.mlp_fc2"],
+         v.name + ": re-permuted fc2 checksum matches the C-verified variant");
+      ok(adjacencyScore(profs, ord).toString() === v.selected_score,
+         v.name + ": exact adjacency score recomputed from the embedded tensors");
+      ok(v.original_score === LAYOUTS.variants[0].selected_score,
+         v.name + ": original_score agrees with the identity layout's score");
+    }
+    const orig = LAYOUTS.variants[0];
+    ok(orig.model_sha256 === summary.model_sha256,
+       "original variant records this checkpoint's sha256");
+    ok(orig.fnv1a64["layers.0.mlp_fc1"] ===
+         summary.tensor_fnv1a64["layers.0.mlp_fc1"] &&
+       orig.fnv1a64["layers.0.mlp_fc2"] ===
+         summary.tensor_fnv1a64["layers.0.mlp_fc2"],
+       "identity-permutation checksums equal the C loader's originals");
+  }
+
+  /* ---- hidden-coordinate swap: re-prove the embedded order likewise ---- */
+  {
+    ok(HIDDEN.format === "int-llm-viz-hidden-v1", "HIDDEN format tag");
+    ok(HIDDEN.provenance.source_sha256 === summary.model_sha256,
+       "HIDDEN provenance names this checkpoint's sha256");
+    const n2o = HIDDEN.swap.new_to_old;
+    { const seen = new Uint8Array(32);
+      let bij = n2o.length === 32;
+      if (bij) for (const o of n2o) {
+        if (!Number.isInteger(o) || o < 0 || o > 31 || seen[o]) { bij = false; break; }
+        seen[o] = 1;
+      }
+      ok(bij, "HIDDEN.swap.new_to_old is a bijection on 0…31"); }
+    { let tr = true;
+      for (let j = 0; j < 32; j++) {
+        const want = j === HIDDEN.swap.left ? HIDDEN.swap.right
+          : j === HIDDEN.swap.right ? HIDDEN.swap.left : j;
+        if (n2o[j] !== want) { tr = false; break; }
+      }
+      ok(tr, "the order is exactly the " + HIDDEN.swap.left + "<->" +
+         HIDDEN.swap.right + " transposition (its own inverse)"); }
+    ok(HIDDEN.tensors.map((t) => t.name).slice().sort().join("|") ===
+       TENSOR_ORDER.slice().sort().join("|"),
+       "HIDDEN covers exactly the nine learned tensors");
+    let totChanged = 0, totElems = 0;
+    for (const ht of HIDDEN.tensors) {
+      const t = model.byName.get(ht.name);
+      ok(!!t && t.rows === ht.rows && t.cols === ht.cols &&
+         ht.elements === ht.rows * ht.cols,
+         "HIDDEN record shape matches " + ht.name);
+      ok((ht.axis === "column" ? t.cols : t.rows) === 32,
+         ht.name + ": the swapped " + ht.axis + " axis has length 32");
+      ok(ht.fnv1a64_original === summary.tensor_fnv1a64[ht.name],
+         ht.name + ": original checksum equals the C loader's");
+      const perm = permuteHiddenAxis(t.raw, t.rows, t.cols, ht.axis, n2o);
+      ok(fnv1a64(perm).toString() === ht.fnv1a64_variant,
+         ht.name + ": re-permuted checksum matches the C-verified variant");
+      const chg = countChangedPositions(t.raw, perm);
+      ok(chg === ht.changed_positions,
+         ht.name + ": exactly " + ht.changed_positions + " positions change");
+      ok(fnv1a64(permuteHiddenAxis(perm, t.rows, t.cols, ht.axis, n2o))
+           .toString() === ht.fnv1a64_original,
+         ht.name + ": applying the swap twice restores the original bytes");
+      totChanged += chg;
+      totElems += ht.elements;
+    }
+    ok(totChanged === HIDDEN.totals.changed_positions &&
+       totElems === HIDDEN.totals.learned_positions &&
+       HIDDEN.tensors.length === HIDDEN.totals.matrices_changed,
+       "recomputed totals match HIDDEN.totals across all nine matrices");
+    ok(HIDDEN.totals.changed_positions === 892 &&
+       HIDDEN.totals.learned_positions === 14272,
+       "totals are the published 892 / 14272 (as printed on the page)");
+    ok(/^[0-9a-f]{64}$/.test(HIDDEN.variant_sha256) &&
+       HIDDEN.variant_sha256 !== summary.model_sha256,
+       "the swapped checkpoint is a distinct, well-formed sha256");
+  }
+
+  return n;
+}
+
+function nodeSelfTest() {
+  const model = parseMGW(b64ToBytes(MGW_B64));
+  const checks = assertAll(model, SUMMARY);
+  globalThis.__PAGE_CHECK__ = { page: "atlas", pass: true, checks };
+}
+
+/* =====================================================================
+ * Layer 2 — browser UI. Nothing below runs under Node.
+ * ===================================================================== */
+function init() {
+  const model = parseMGW(b64ToBytes(MGW_B64));
+
+  /* run the same assertions the Node gate runs; report in the header */
+  let checks = 0, checkErr = null;
+  try { checks = assertAll(model, SUMMARY); }
+  catch (e) { checkErr = e; console.error("self-check failure:", e); }
+  const scEl = document.getElementById("selfCheck");
+  if (checkErr) {
+    scEl.className = "badge fail";
+    scEl.textContent = "self-check: FAILED — see console";
+  } else {
+    scEl.className = "badge pass";
+    scEl.textContent = "self-check: " + checks + " checks ✓";
+  }
+
+  /* ---- exact per-tensor stats (BigInt; computed once) ---- */
+  const stats = {};                       /* name -> tensorStats */
+  let globalMaxAbs = 0n, globalMaxName = "";
+  for (const nm of TENSOR_ORDER) {
+    const t = model.byName.get(nm);
+    stats[nm] = tensorStats(t.raw);
+    if (stats[nm].maxAbsRaw > globalMaxAbs) {
+      globalMaxAbs = stats[nm].maxAbsRaw;
+      globalMaxName = nm;
+    }
+  }
+
+  /* ---- mutable UI state ---- */
+  const S = {
+    scaleMode: "per",                     /* "per" | "global" */
+    active: 0,                            /* index into TENSOR_ORDER */
+    cursors: TENSOR_ORDER.map(() => ({ r: 0, c: 0 })),
+    pinned: null,                         /* {idx, r, c} | null */
+    F: 48,
+    loOrder: "original",                  /* layout section: selected order   */
+    loNeuron: null,                       /* layout section: original neuron id */
+    hsSel: null,                          /* swap section: {name, lane} | null */
+    hsJump: null,                         /* swap section: last jump target   */
+    bitsName: "wte",
+    bitCursor: null,                      /* bit index | null */
+    zoomIdx: null,                        /* index | null while zoom open */
+    geoms: new Array(9).fill(null),       /* grid heat geometries */
+    zoomGeom: null,
+  };
+  const imageCache = new Map();           /* name|mode -> canvas (cols×rows) */
+  const histCache = new Map();            /* name|mode -> Uint32Array bins   */
+  const occCache = new Map();             /* name -> Uint32Array(63)         */
+  const changedCache = new Map();         /* name|F -> count                 */
+  const loImgCache = new Map();           /* layout pair: order|tensor|mode  */
+  const hsImgCache = new Map();           /* swap pair: tensor|side|mode     */
+
+  const dpr = () => Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  const activeMax = (nm) =>
+    S.scaleMode === "global" ? globalMaxAbs : stats[nm].maxAbsRaw;
+  const approx = (M) => {                 /* display-only shortened endpoint */
+    const x = Q48.toNumber(M);            /* display-only */
+    return x >= 10 ? x.toFixed(2) : x.toPrecision(4);
+  };
+
+  function tensorImage(nm) {
+    const key = nm + "|" + S.scaleMode;
+    let cv = imageCache.get(key);
+    if (!cv) {
+      const t = model.byName.get(nm);
+      cv = document.createElement("canvas");
+      cv.width = t.cols; cv.height = t.rows;
+      const px = buildCellImage(t.raw, activeMax(nm)); /* display-only colors */
+      cv.getContext("2d").putImageData(new ImageData(px, t.cols, t.rows), 0, 0);
+      imageCache.set(key, cv);
+    }
+    return cv;
+  }
+  function histFor(nm) {
+    const key = nm + "|" + S.scaleMode;
+    let bins = histCache.get(key);
+    if (!bins) {
+      bins = histCounts(model.byName.get(nm).raw, activeMax(nm), HIST_BINS);
+      histCache.set(key, bins);
+    }
+    return bins;
+  }
+  function occFor(nm) {
+    let o = occCache.get(nm);
+    if (!o) { o = bitOccupancy(model.byName.get(nm).raw); occCache.set(nm, o); }
+    return o;
+  }
+  function changedAt(nm, F) {
+    const key = nm + "|" + F;
+    let v = changedCache.get(key);
+    if (v === undefined) {
+      v = countChangedAtF(model.byName.get(nm).raw, F);
+      changedCache.set(key, v);
+    }
+    return v;
+  }
+
+  /* ---------- static text ---------- */
+  document.getElementById("globalNote").textContent =
+    "shared global max |value| = " + Q48.toDecimalString(globalMaxAbs) +
+    " (attained in " + globalMaxName + ")";
+  document.getElementById("foot").innerHTML =
+    '<span class="mono">' + SUMMARY.model_file + "</span> · sha256 " +
+    '<span class="mono">' + SUMMARY.model_sha256 + "</span> · " +
+    SUMMARY.model_bytes + " bytes · values traced against the original C runtime: " +
+    SUMMARY.trace_steps + " steps, 0 mismatches · self-test: " +
+    (checkErr ? "FAILED" : checks + " checks, also run headless in Node") +
+    " · Apache-2.0 · © 2026 Nenad Mićić";
+
+  /* ---------- build the nine panels ---------- */
+  const panelsEl = document.getElementById("panels");
+  const panelDom = [];                    /* {sec, heat, hist, scaleEl, statsEl} */
+  TENSOR_ORDER.forEach((nm, i) => {
+    const t = model.byName.get(nm);
+    const meta = PANEL_META[nm];
+    const sec = document.createElement("section");
+    sec.className = "panel card" + (meta.wide ? " wide" : "");
+    const head = document.createElement("div");
+    head.className = "phead";
+    const title = document.createElement("button");
+    title.className = "ptitle";
+    title.textContent = nm;
+    title.title = "open detail zoom of " + nm;
+    title.setAttribute("aria-label", "open detail zoom of " + nm);
+    const shape = document.createElement("span");
+    shape.className = "pshape";
+    shape.textContent = t.rows + " × " + t.cols;
+    head.appendChild(title); head.appendChild(shape);
+    const sub = document.createElement("div");
+    sub.className = "psub";
+    sub.textContent = meta.sub;
+    const heat = document.createElement("canvas");
+    heat.className = "heat";
+    heat.tabIndex = 0;
+    heat.setAttribute("aria-label", nm + " heatmap, " + t.rows + " rows by " +
+      t.cols + " columns; arrow keys move the cell cursor, Enter pins, Z zooms");
+    const hist = document.createElement("canvas");
+    hist.className = "hist";
+    hist.setAttribute("aria-hidden", "true");
+    const statsEl = document.createElement("div");
+    statsEl.className = "pstats";
+    const st = stats[nm];
+    statsEl.innerHTML =
+      '<span class="k">min raw</span> <b>' + st.minRaw.toString() + "</b> · " +
+      '<span class="k">max raw</span> <b>' + st.maxRaw.toString() + "</b><br>" +
+      '<span class="k">Σ raw</span> <b>' + st.sumRaw.toString() + "</b> " +
+      '<span class="k">= </span><b>' + Q48.toDecimalString(st.sumRaw) +
+      '</b> <span class="k">(exact BigInt sum, itself Q16.48)</span>';
+    const scaleEl = document.createElement("div");
+    scaleEl.className = "pscale";
+    sec.appendChild(head); sec.appendChild(sub); sec.appendChild(heat);
+    sec.appendChild(hist); sec.appendChild(statsEl); sec.appendChild(scaleEl);
+    panelsEl.appendChild(sec);
+    panelDom.push({ sec, heat, hist, scaleEl });
+
+    title.addEventListener("click", () => openZoom(i));
+    heat.addEventListener("focus", () => { setActive(i); });
+    heat.addEventListener("mousemove", (ev) => onHeatHover(i, ev, heat, S.geoms[i]));
+    heat.addEventListener("mouseleave", hideTip);
+    heat.addEventListener("click", (ev) => {
+      const cell = cellFromEvent(ev, heat, S.geoms[i], nm);
+      if (cell) { S.cursors[i] = cell; setActive(i); togglePin(i, cell.r, cell.c); markDirty(i); }
+    });
+    heat.addEventListener("keydown", (ev) => onHeatKey(i, ev));
+  });
+
+  /* ---------- rail: inspector + bits ---------- */
+  const insBody = document.getElementById("insBody");
+  const pinBadge = document.getElementById("pinBadge");
+  const bitsSel = document.getElementById("bitsSel");
+  TENSOR_ORDER.forEach((nm) => {
+    const o = document.createElement("option");
+    o.value = nm; o.textContent = nm;
+    bitsSel.appendChild(o);
+  });
+  bitsSel.value = S.bitsName;
+  bitsSel.addEventListener("change", () => {
+    S.bitsName = bitsSel.value;
+    S.bitCursor = null;
+    markBitsDirty();
+  });
+  const bitsCanvas = document.getElementById("bitsCanvas");
+  bitsCanvas.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+      ev.preventDefault();
+      const d = ev.key === "ArrowRight" ? 1 : -1;
+      S.bitCursor = S.bitCursor === null ? 48
+        : Math.max(0, Math.min(62, S.bitCursor + d));
+      markBitsDirty();
+    } else if (ev.key === "Escape" && S.bitCursor !== null) {
+      S.bitCursor = null; markBitsDirty(); ev.stopPropagation();
+    }
+  });
+  bitsCanvas.addEventListener("mousemove", (ev) => {
+    const g = bitsGeom();
+    const x = (ev.clientX - bitsCanvas.getBoundingClientRect().left) * dpr();
+    const b = Math.floor((x - g.padL) / g.barW);
+    const nb = (b >= 0 && b < 63) ? b : null;
+    if (nb !== S.bitCursor) { S.bitCursor = nb; markBitsDirty(); }
+  });
+  bitsCanvas.addEventListener("mouseleave", () => { S.bitCursor = null; markBitsDirty(); });
+
+  const fRange = document.getElementById("fRange");
+  const fVal = document.getElementById("fVal");
+  fRange.addEventListener("input", () => { setF(parseInt(fRange.value, 10)); });
+  function setF(F) {
+    S.F = Math.max(8, Math.min(48, F));
+    fRange.value = String(S.F);
+    fVal.textContent = "F=" + S.F;
+    updateFInfo();
+    if (S.zoomIdx !== null) markZoomDirty();
+  }
+  function updateFInfo() {
+    const nm = S.bitsName;
+    const t = model.byName.get(nm);
+    const ch = changedAt(nm, S.F);
+    document.getElementById("fInfo").innerHTML =
+      '<span class="k">at</span> <b>F=' + S.F + "</b><span class=\"k\">:</span> <b>" +
+      ch + "</b> <span class=\"k\">of</span> <b>" + t.numElements +
+      "</b> <span class=\"k\">stored weights of " + nm +
+      " would change (round-half-to-even to " + S.F + " fraction bits)" +
+      (S.F === 48 ? " — full stored precision" : "") + "</span>";
+  }
+
+  /* ---------- scale toggle ---------- */
+  const perBtn = document.getElementById("scalePer");
+  const globalBtn = document.getElementById("scaleGlobal");
+  function setScaleMode(mode) {
+    if (S.scaleMode === mode) return;
+    S.scaleMode = mode;
+    perBtn.classList.toggle("on", mode === "per");
+    perBtn.setAttribute("aria-pressed", String(mode === "per"));
+    globalBtn.classList.toggle("on", mode === "global");
+    globalBtn.setAttribute("aria-pressed", String(mode === "global"));
+    updateScaleLines();
+    markAllDirty();
+    if (S.zoomIdx !== null) markZoomDirty();
+  }
+  perBtn.addEventListener("click", () => setScaleMode("per"));
+  globalBtn.addEventListener("click", () => setScaleMode("global"));
+  function updateScaleLines() {
+    TENSOR_ORDER.forEach((nm, i) => {
+      const M = activeMax(nm);
+      panelDom[i].scaleEl.innerHTML =
+        '<span class="k">ramp & histogram endpoints</span> <b>±' +
+        Q48.toDecimalString(M) + "</b> <span class=\"k\">(" +
+        (S.scaleMode === "global" ? "shared global max |value|"
+                                  : "this tensor's max |value|") + ")</span>";
+    });
+  }
+
+  /* ---------- tooltip ---------- */
+  const tip = document.getElementById("tip");
+  function showTipAt(clientX, clientY, html) {
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const r = tip.getBoundingClientRect();
+    let x = clientX + 14, y = clientY + 14;
+    if (x + r.width + 8 > vw) x = Math.max(4, clientX - r.width - 10);
+    if (y + r.height + 8 > vh) y = Math.max(4, clientY - r.height - 10);
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  }
+  function hideTip() { tip.style.display = "none"; }
+  window.addEventListener("scroll", hideTip, { passive: true });
+
+  function cellHTML(nm, r, c) {
+    const t = model.byName.get(nm);
+    const v = t.raw[r * t.cols + c];
+    const d = describeCell(nm, r, c, model.uchars);
+    return '<span class="k">' + nm + "[</span>" + r + '<span class="k">][</span>' +
+      c + '<span class="k">]</span><br>' +
+      '<span class="k">row</span> ' + r + " = " + d.row + "<br>" +
+      '<span class="k">col</span> ' + c + " = " + d.col + "<br>" +
+      (d.head ? '<span class="k">group</span> ' + d.head + "<br>" : "") +
+      '<span class="k">raw</span> ' + v.toString() + "<br>" +
+      '<span class="k">hex</span> ' + Q48.toHex(v) + "<br>" +
+      '<span class="k">value</span> ' + Q48.toDecimalString(v);
+  }
+
+  /* ---------- inspector ---------- */
+  function fillReadout(el, nm, r, c) {
+    const t = model.byName.get(nm);
+    const v = t.raw[r * t.cols + c];
+    const d = describeCell(nm, r, c, model.uchars);
+    el.innerHTML =
+      '<div><span class="k">tensor</span> <b>' + nm + "</b> <b>[" + r + "][" +
+      c + "]</b> <span class=\"k\">(" + t.rows + " × " + t.cols + ")</span></div>" +
+      '<div><span class="k">row ' + r + " =</span> " + d.row + "</div>" +
+      '<div><span class="k">col ' + c + " =</span> " + d.col + "</div>" +
+      (d.head ? '<div><span class="k">group</span> ' + d.head + "</div>" : "") +
+      '<div><span class="k">raw</span> <b>' + v.toString() + "</b></div>" +
+      '<div><span class="k">hex</span> <b>' + Q48.toHex(v) + "</b></div>" +
+      '<div class="val"><span class="k">value</span> <b>' + Q48.toDecimalString(v) +
+      '</b> <span class="k">(exact decimal, = raw / 2^48)</span></div>' +
+      '<div><span class="k">float64-exact:</span> ' +
+      (Q48.isExactAsNumber(v) ? "yes (|raw| &lt; 2^53)" : "NO") + "</div>";
+  }
+  function updateInspectorFromCursor() {
+    if (S.pinned) return;
+    const nm = TENSOR_ORDER[S.active];
+    const cur = S.cursors[S.active];
+    fillReadout(insBody, nm, cur.r, cur.c);
+  }
+  function togglePin(idx, r, c) {
+    const p = S.pinned;
+    if (p && p.idx === idx && p.r === r && p.c === c) {
+      S.pinned = null;
+      pinBadge.hidden = true;
+      updateInspectorFromCursor();
+    } else {
+      S.pinned = { idx, r, c };
+      pinBadge.hidden = false;
+      fillReadout(insBody, TENSOR_ORDER[idx], r, c);
+    }
+    markDirty(idx);
+    if (p) markDirty(p.idx);
+    if (S.zoomIdx !== null) markZoomDirty();
+  }
+
+  /* ---------- geometry ---------- */
+  function heatGeom(nm, availCss, mode) {
+    const meta = PANEL_META[nm];
+    const D = dpr();
+    const gLcss = mode === "zoom"
+      ? 26 + (meta.headAxis === "rows" ? 24 : 0) + (meta.tokenRows ? 16 : 0)
+      : (meta.headAxis === "rows" ? 22 : (meta.tokenRows ? 24 : 2));
+    const gTcss = mode === "zoom"
+      ? 20 + (meta.headAxis === "cols" ? 20 : 0)
+      : (meta.headAxis === "cols" ? 18 : 2);
+    let cell;
+    if (mode === "zoom") {
+      const fitW = Math.floor((window.innerWidth * 0.92 - gLcss - 24) / meta.cols);
+      const fitH = Math.floor((window.innerHeight * 0.62 - gTcss) / meta.rows);
+      cell = Math.max(8, Math.min(26, Math.min(fitW, fitH)));
+    } else {
+      const fitW = Math.floor((availCss - gLcss) / meta.cols);
+      const fitH = Math.floor(meta.maxH / meta.rows);
+      cell = Math.max(1, Math.min(12, Math.min(fitW, fitH)));
+    }
+    const cellD = Math.max(1, Math.floor(cell * D));
+    const gL = Math.round(gLcss * D), gT = Math.round(gTcss * D);
+    return { nm, mode, D, cellD, gL, gT,
+             rows: meta.rows, cols: meta.cols,
+             w: gL + meta.cols * cellD + Math.round(2 * D),
+             h: gT + meta.rows * cellD + Math.round(2 * D) };
+  }
+  function sizeCanvas(cv, g) {          /* display-only: pixel geometry */
+    cv.width = g.w; cv.height = g.h;
+    cv.style.width = (g.w / g.D) + "px";
+    cv.style.height = (g.h / g.D) + "px";
+  }
+  function cellFromEvent(ev, cv, g, nm) {
+    if (!g) return null;
+    const rect = cv.getBoundingClientRect();
+    const x = (ev.clientX - rect.left) * g.D - g.gL;
+    const y = (ev.clientY - rect.top) * g.D - g.gT;
+    const c = Math.floor(x / g.cellD), r = Math.floor(y / g.cellD);
+    if (r < 0 || c < 0 || r >= g.rows || c >= g.cols) return null;
+    return { r, c };
+  }
+
+  /* ---------- heatmap drawing ---------- */
+  function drawHeat(cv, idx, g, opts) {
+    const nm = TENSOR_ORDER[idx];
+    const meta = PANEL_META[nm];
+    const ctx = cv.getContext("2d");
+    const D = g.D, cd = g.cellD;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(tensorImage(nm), 0, 0, g.cols, g.rows,
+                  g.gL, g.gT, g.cols * cd, g.rows * cd);
+    ctx.strokeStyle = LINE;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(g.gL - 0.5, g.gT - 0.5, g.cols * cd + 1, g.rows * cd + 1);
+
+    const fs = (px) => { ctx.font = Math.round(px * D) + "px " + MONO_STACK; };
+
+    /* token letter row labels (wte, lm_head) when space allows */
+    if (meta.tokenRows && (g.mode === "zoom" || cd >= 8 * D * 0.85)) {
+      ctx.fillStyle = DIM;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      for (let r = 0; r < g.rows; r++) {
+        const y = g.gT + r * cd + cd / 2;
+        if (r === 26) { fs(Math.min(7, cd / D)); ctx.fillText("BOS", g.gL - 3 * D, y); }
+        else { fs(Math.min(9, cd / D)); ctx.fillText(model.uchars[r], g.gL - 3 * D, y); }
+      }
+    }
+
+    /* head strips + labels (identity is the text; color is redundant cue) */
+    if (meta.headAxis === "rows") {
+      const sw = Math.max(2, Math.round(3 * D));
+      for (let h = 0; h < 4; h++) {
+        const y0 = g.gT + h * 8 * cd, y1 = g.gT + (h + 1) * 8 * cd;
+        ctx.fillStyle = HEAD_COLORS[h];
+        ctx.fillRect(g.gL - sw - 2 * D, y0 + 1, sw, y1 - y0 - 2);
+        ctx.fillStyle = INK;
+        fs(8); ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        ctx.fillText("h" + h, g.gL - sw - 4 * D, (y0 + y1) / 2);
+      }
+      ctx.strokeStyle = DIM;
+      for (let h = 1; h < 4; h++) {
+        const y = g.gT + h * 8 * cd;
+        ctx.beginPath();
+        ctx.moveTo(g.gL - 2 * D, y + 0.5); ctx.lineTo(g.gL + 3 * D, y + 0.5);
+        ctx.stroke();
+      }
+    } else if (meta.headAxis === "cols") {
+      const sh = Math.max(2, Math.round(3 * D));
+      for (let h = 0; h < 4; h++) {
+        const x0 = g.gL + h * 8 * cd, x1 = g.gL + (h + 1) * 8 * cd;
+        ctx.fillStyle = HEAD_COLORS[h];
+        ctx.fillRect(x0 + 1, g.gT - sh - 2 * D, x1 - x0 - 2, sh);
+        ctx.fillStyle = INK;
+        fs(8); ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+        ctx.fillText("h" + h, (x0 + x1) / 2, g.gT - sh - 3 * D);
+      }
+      ctx.strokeStyle = DIM;
+      for (let h = 1; h < 4; h++) {
+        const x = g.gL + h * 8 * cd;
+        ctx.beginPath();
+        ctx.moveTo(x + 0.5, g.gT - 2 * D); ctx.lineTo(x + 0.5, g.gT + 3 * D);
+        ctx.stroke();
+      }
+    }
+
+    /* zoom rulers: literal indices */
+    if (g.mode === "zoom") {
+      ctx.fillStyle = DIM;
+      fs(9);
+      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      let step = 1;
+      while (step * cd < 20 * D) step *= 2;
+      for (let c = 0; c < g.cols; c += step)
+        ctx.fillText(String(c), g.gL + c * cd + cd / 2, g.gT - 3 * D);
+      if (!meta.tokenRows) {
+        ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        let rstep = 1;
+        while (rstep * cd < 14 * D) rstep *= 2;
+        for (let r = 0; r < g.rows; r += rstep)
+          ctx.fillText(String(r), g.gL - 4 * D -
+            (meta.headAxis === "rows" ? 20 * D : 0), g.gT + r * cd + cd / 2);
+      } else {
+        ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        for (let r = 0; r < g.rows; r += 4)
+          ctx.fillText(String(r), g.gL - 20 * D, g.gT + r * cd + cd / 2);
+      }
+    }
+
+    /* F-rung changed-cell outlines (zoom only) */
+    if (opts && opts.changed) {
+      ctx.strokeStyle = CHANGED_OUTLINE;
+      ctx.lineWidth = Math.max(1, Math.round(D));
+      ctx.beginPath();
+      const m = opts.changed;
+      for (let r = 0; r < g.rows; r++)
+        for (let c = 0; c < g.cols; c++)
+          if (m[r * g.cols + c])
+            ctx.rect(g.gL + c * cd + 0.5, g.gT + r * cd + 0.5, cd - 1, cd - 1);
+      ctx.stroke();
+    }
+
+    /* pinned cell (gold) and cursor (white), both double-stroked for contrast */
+    const box = (r, c, color) => {
+      const x = g.gL + c * cd, y = g.gT + r * cd;
+      ctx.lineWidth = Math.max(2, Math.round(2 * D));
+      ctx.strokeStyle = "#0b0e14";
+      ctx.strokeRect(x + 0.5, y + 0.5, cd - 1, cd - 1);
+      ctx.lineWidth = Math.max(1, Math.round(D));
+      ctx.strokeStyle = color;
+      ctx.strokeRect(x + 0.5, y + 0.5, cd - 1, cd - 1);
+    };
+    if (S.pinned && S.pinned.idx === idx) box(S.pinned.r, S.pinned.c, "#ffd166");
+    if (opts && opts.cursor) box(opts.cursor.r, opts.cursor.c, "#ffffff");
+  }
+
+  /* ---------- histogram drawing ---------- */
+  function drawHist(cv, nm, availCss) {
+    const D = dpr();
+    const wCss = Math.min(availCss, 430), hCss = 58;
+    cv.width = Math.round(wCss * D); cv.height = Math.round(hCss * D);
+    cv.style.width = wCss + "px"; cv.style.height = hCss + "px";
+    const ctx = cv.getContext("2d");
+    const bins = histFor(nm);
+    let maxCount = 1;
+    for (let i = 0; i < bins.length; i++) if (bins[i] > maxCount) maxCount = bins[i];
+    const padB = Math.round(13 * D), padT = Math.round(11 * D);
+    const H = cv.height - padB - padT, W = cv.width;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    /* baseline */
+    ctx.strokeStyle = LINE; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, padT + H + 0.5); ctx.lineTo(W, padT + H + 0.5);
+    ctx.stroke();
+    /* bars, batched by side color (bins 0..31 negative, 32..63 non-negative) */
+    const gap = Math.max(1, Math.round(D * 0.7));
+    const drawSide = (from, to, color) => {
+      ctx.fillStyle = color;
+      for (let b = from; b < to; b++) {
+        if (!bins[b]) continue;
+        const x0 = Math.round(b * W / HIST_BINS);
+        const x1 = Math.round((b + 1) * W / HIST_BINS);
+        const bh = Math.max(1, Math.round(H * bins[b] / maxCount)); /* display-only */
+        ctx.fillRect(x0, padT + H - bh, Math.max(1, x1 - x0 - gap), bh);
+      }
+    };
+    drawSide(0, HIST_BINS / 2, "#4dabf7");
+    drawSide(HIST_BINS / 2, HIST_BINS, "#ffa94d");
+    /* zero tick */
+    ctx.strokeStyle = DIM;
+    ctx.beginPath();
+    ctx.moveTo(Math.round(W / 2) + 0.5, padT);
+    ctx.lineTo(Math.round(W / 2) + 0.5, padT + H + 3 * D);
+    ctx.stroke();
+    /* labels — ink/mono only; ≈ marks display-only shortening */
+    const M = activeMax(nm);
+    ctx.fillStyle = DIM;
+    ctx.font = Math.round(8 * D) + "px " + MONO_STACK;
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    ctx.fillText("≈−" + approx(M), 1, padT + H + 3 * D);
+    ctx.fillText("peak " + maxCount, 1, 1);
+    ctx.textAlign = "center";
+    ctx.fillText("0", W / 2, padT + H + 3 * D);
+    ctx.textAlign = "right";
+    ctx.fillText("≈+" + approx(M), W - 1, padT + H + 3 * D);
+  }
+
+  /* ---------- bits panel drawing ---------- */
+  function bitsGeom() {
+    const D = dpr();
+    const wCss = Math.max(200, bitsCanvas.parentElement.clientWidth - 28);
+    const w = Math.round(Math.min(wCss, 430) * D);
+    const padL = Math.round(4 * D);
+    return { D, w, h: Math.round(96 * D), padL,
+             barW: (w - 2 * padL) / 63 };
+  }
+  function drawBits() {
+    const g = bitsGeom();
+    const D = g.D;
+    bitsCanvas.width = g.w; bitsCanvas.height = g.h;
+    bitsCanvas.style.width = (g.w / D) + "px";
+    bitsCanvas.style.height = (g.h / D) + "px";
+    const ctx = bitsCanvas.getContext("2d");
+    const occ = occFor(S.bitsName);
+    const t = model.byName.get(S.bitsName);
+    let maxC = 1;
+    for (let b = 0; b < 63; b++) if (occ[b] > maxC) maxC = occ[b];
+    const padT = Math.round(12 * D), padB = Math.round(14 * D);
+    const H = g.h - padT - padB;
+    ctx.clearRect(0, 0, g.w, g.h);
+    /* integer-bit region shading (bits 48..62) */
+    const x48 = g.padL + 48 * g.barW;
+    ctx.fillStyle = "#161b28";
+    ctx.fillRect(x48, padT, g.padL + 63 * g.barW - x48, H);
+    /* bars (single amber hue; counts are magnitudes) */
+    ctx.fillStyle = "#ffd166";
+    for (let b = 0; b < 63; b++) {
+      if (!occ[b]) continue;
+      const x0 = Math.round(g.padL + b * g.barW);
+      const x1 = Math.round(g.padL + (b + 1) * g.barW);
+      const bh = Math.max(1, Math.round(H * occ[b] / maxC)); /* display-only */
+      ctx.fillRect(x0, padT + H - bh, Math.max(1, x1 - x0 - 1), bh);
+    }
+    /* baseline + 1.0 boundary marker at bit 48 */
+    ctx.strokeStyle = LINE;
+    ctx.beginPath();
+    ctx.moveTo(0, padT + H + 0.5); ctx.lineTo(g.w, padT + H + 0.5);
+    ctx.stroke();
+    ctx.strokeStyle = "#ffd166";
+    ctx.beginPath();
+    ctx.moveTo(Math.round(x48) + 0.5, padT - 6 * D);
+    ctx.lineTo(Math.round(x48) + 0.5, padT + H);
+    ctx.stroke();
+    ctx.fillStyle = INK;
+    ctx.font = Math.round(8 * D) + "px " + MONO_STACK;
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText("bit 48 = 1.0", Math.round(x48) + 3 * D, 0);
+    /* cursor highlight */
+    if (S.bitCursor !== null) {
+      const b = S.bitCursor;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = Math.max(1, Math.round(D));
+      const x0 = Math.round(g.padL + b * g.barW);
+      const x1 = Math.round(g.padL + (b + 1) * g.barW);
+      ctx.strokeRect(x0 + 0.5, padT + 0.5, Math.max(1, x1 - x0 - 1), H - 1);
+    }
+    /* x labels every 8 bits + peak count */
+    ctx.fillStyle = DIM;
+    ctx.textBaseline = "top";
+    for (let b = 0; b <= 62; b += 8) {
+      const x = g.padL + (b + 0.5) * g.barW;
+      ctx.textAlign = "center";
+      ctx.fillText(String(b), x, padT + H + 3 * D);
+    }
+    ctx.textAlign = "right";
+    ctx.fillText("62", g.padL + 62.5 * g.barW, padT + H + 3 * D);
+    ctx.textAlign = "left";
+    ctx.fillText("peak " + maxC, 1, 0);
+    /* info line */
+    const info = document.getElementById("bitsInfo");
+    if (S.bitCursor === null) {
+      info.innerHTML = '<span class="k">bit occupancy of |raw| over</span> <b>' +
+        S.bitsName + "</b> <span class=\"k\">(" + t.numElements +
+        " weights) · focus the chart and use ←/→, or hover</span>";
+    } else {
+      const b = S.bitCursor;
+      info.innerHTML = '<span class="k">bit</span> <b>' + b +
+        "</b> <span class=\"k\">(place value 2^" + (b - 48) +
+        ") set in</span> <b>" + occ[b] + "</b> <span class=\"k\">of " +
+        t.numElements + " |raw| values of " + S.bitsName + "</span>";
+    }
+  }
+
+  /* ---------- grid panel rendering ---------- */
+  function renderPanel(i) {
+    const nm = TENSOR_ORDER[i];
+    const d = panelDom[i];
+    const availCss = Math.max(120, d.sec.clientWidth - 30);
+    const g = heatGeom(nm, availCss, "grid");
+    S.geoms[i] = g;
+    sizeCanvas(d.heat, g);
+    drawHeat(d.heat, i, g, {
+      cursor: S.active === i ? S.cursors[i] : null,
+      changed: null,
+    });
+    drawHist(d.hist, nm, availCss);
+  }
+
+  /* ---------- zoom ---------- */
+  const zoomOverlay = document.getElementById("zoomOverlay");
+  const zoomCanvas = document.getElementById("zoomCanvas");
+  const zoomReadout = document.getElementById("zoomReadout");
+  let zoomReturnFocus = null;
+  function openZoom(idx) {
+    S.zoomIdx = idx;
+    S.active = idx;
+    zoomReturnFocus = panelDom[idx].heat;
+    const nm = TENSOR_ORDER[idx];
+    const t = model.byName.get(nm);
+    document.getElementById("zoomName").textContent = nm;
+    document.getElementById("zoomShape").textContent = t.rows + " × " + t.cols;
+    document.getElementById("zoomSub").textContent = PANEL_META[nm].sub;
+    zoomOverlay.classList.add("open");
+    syncBitsTo(nm);
+    markZoomDirty();
+    zoomCanvas.focus();
+  }
+  function closeZoom() {
+    S.zoomIdx = null;
+    zoomOverlay.classList.remove("open");
+    hideTip();
+    if (zoomReturnFocus) zoomReturnFocus.focus();
+  }
+  document.getElementById("zoomClose").addEventListener("click", closeZoom);
+  zoomOverlay.addEventListener("mousedown", (ev) => {
+    if (ev.target === zoomOverlay) closeZoom();
+  });
+  function renderZoom() {
+    if (S.zoomIdx === null) return;
+    const idx = S.zoomIdx, nm = TENSOR_ORDER[idx];
+    const g = heatGeom(nm, 0, "zoom");
+    S.zoomGeom = g;
+    sizeCanvas(zoomCanvas, g);
+    drawHeat(zoomCanvas, idx, g, {
+      cursor: S.cursors[idx],
+      changed: S.F < 48 ? changedMaskAtF(model.byName.get(nm).raw, S.F) : null,
+    });
+    const badge = document.getElementById("zoomFBadge");
+    badge.textContent = S.F < 48
+      ? "pink outline = would change at F=" + S.F + " (" +
+        changedAt(nm, S.F) + " cells)"
+      : "F=48: no cells change";
+    const src = (S.pinned && S.pinned.idx === idx) ? S.pinned : S.cursors[idx];
+    fillReadout(zoomReadout, nm, src.r, src.c);
+  }
+  zoomCanvas.addEventListener("mousemove", (ev) => {
+    const idx = S.zoomIdx;
+    if (idx === null) return;
+    const cell = cellFromEvent(ev, zoomCanvas, S.zoomGeom, TENSOR_ORDER[idx]);
+    if (!cell) { hideTip(); return; }
+    showTipAt(ev.clientX, ev.clientY, cellHTML(TENSOR_ORDER[idx], cell.r, cell.c));
+    if (!S.pinned) fillReadout(zoomReadout, TENSOR_ORDER[idx], cell.r, cell.c);
+  });
+  zoomCanvas.addEventListener("mouseleave", hideTip);
+  zoomCanvas.addEventListener("click", (ev) => {
+    const idx = S.zoomIdx;
+    if (idx === null) return;
+    const cell = cellFromEvent(ev, zoomCanvas, S.zoomGeom, TENSOR_ORDER[idx]);
+    if (!cell) return;
+    S.cursors[idx] = cell;
+    togglePin(idx, cell.r, cell.c);
+    markZoomDirty(); markDirty(idx);
+  });
+  zoomCanvas.addEventListener("keydown", (ev) => {
+    const idx = S.zoomIdx;
+    if (idx === null) return;
+    if (handleNavKey(ev, idx)) { markZoomDirty(); markDirty(idx); }
+  });
+
+  /* ---------- hover + keys on grid panels ---------- */
+  function onHeatHover(i, ev, cv, g) {
+    const nm = TENSOR_ORDER[i];
+    const cell = cellFromEvent(ev, cv, g, nm);
+    if (!cell) { hideTip(); return; }
+    showTipAt(ev.clientX, ev.clientY, cellHTML(nm, cell.r, cell.c));
+    if (!S.pinned) fillReadout(insBody, nm, cell.r, cell.c);
+  }
+  /* Returns true if the key moved the cursor / acted. */
+  function handleNavKey(ev, idx) {
+    const meta = PANEL_META[TENSOR_ORDER[idx]];
+    const cur = S.cursors[idx];
+    let { r, c } = cur;
+    switch (ev.key) {
+      case "ArrowLeft": c--; break;
+      case "ArrowRight": c++; break;
+      case "ArrowUp": r--; break;
+      case "ArrowDown": r++; break;
+      case "Home": c = 0; break;
+      case "End": c = meta.cols - 1; break;
+      case "PageUp": r -= 8; break;
+      case "PageDown": r += 8; break;
+      case "Enter": case " ":
+        ev.preventDefault();
+        togglePin(idx, cur.r, cur.c);
+        return true;
+      case "z": case "Z":
+        ev.preventDefault();
+        if (S.zoomIdx === null) openZoom(idx);
+        return false;
+      default:
+        return false;
+    }
+    ev.preventDefault();
+    r = Math.max(0, Math.min(meta.rows - 1, r));
+    c = Math.max(0, Math.min(meta.cols - 1, c));
+    if (r === cur.r && c === cur.c) return false;
+    S.cursors[idx] = { r, c };
+    if (!S.pinned) {
+      fillReadout(insBody, TENSOR_ORDER[idx], r, c);
+      if (S.zoomIdx === idx) fillReadout(zoomReadout, TENSOR_ORDER[idx], r, c);
+    }
+    keyboardTip(idx, r, c);
+    return true;
+  }
+  function keyboardTip(idx, r, c) {
+    const inZoom = S.zoomIdx === idx;
+    const cv = inZoom ? zoomCanvas : panelDom[idx].heat;
+    const g = inZoom ? S.zoomGeom : S.geoms[idx];
+    if (!g) return;
+    const rect = cv.getBoundingClientRect();
+    const x = rect.left + (g.gL + (c + 1) * g.cellD) / g.D;
+    const y = rect.top + (g.gT + (r + 1) * g.cellD) / g.D;
+    showTipAt(x, y, cellHTML(TENSOR_ORDER[idx], r, c));
+  }
+  function onHeatKey(i, ev) {
+    if (handleNavKey(ev, i)) markDirty(i);
+  }
+  function setActive(i) {
+    const prev = S.active;
+    S.active = i;
+    if (prev !== i) { markDirty(prev); markDirty(i); }
+    syncBitsTo(TENSOR_ORDER[i]);
+    updateInspectorFromCursor();
+  }
+  function syncBitsTo(nm) {
+    if (S.bitsName === nm) return;
+    S.bitsName = nm;
+    bitsSel.value = nm;
+    S.bitCursor = null;
+    markBitsDirty();
+    updateFInfo();
+  }
+
+  /* ---------- help overlay ---------- */
+  const helpOverlay = document.getElementById("helpOverlay");
+  let helpReturnFocus = null;
+  function toggleHelp(force) {
+    const open = force !== undefined ? force : !helpOverlay.classList.contains("open");
+    if (open) {
+      helpReturnFocus = document.activeElement;
+      helpOverlay.classList.add("open");
+      document.getElementById("helpBox").focus();
+    } else {
+      helpOverlay.classList.remove("open");
+      if (helpReturnFocus && helpReturnFocus.focus) helpReturnFocus.focus();
+    }
+  }
+  document.getElementById("helpBtn").addEventListener("click", () => toggleHelp());
+  helpOverlay.addEventListener("mousedown", (ev) => {
+    if (ev.target === helpOverlay) toggleHelp(false);
+  });
+
+  /* ---------- global keys ---------- */
+  document.addEventListener("keydown", (ev) => {
+    const tag = ev.target && ev.target.tagName;
+    const inField = tag === "INPUT" || tag === "SELECT";
+    if (ev.key === "?" && !inField) { ev.preventDefault(); toggleHelp(); return; }
+    if (ev.key === "Escape") {
+      if (helpOverlay.classList.contains("open")) { toggleHelp(false); return; }
+      if (S.zoomIdx !== null) { closeZoom(); return; }
+      if (S.pinned) {
+        const p = S.pinned;
+        S.pinned = null;
+        pinBadge.hidden = true;
+        updateInspectorFromCursor();
+        markDirty(p.idx);
+        return;
+      }
+      if (S.loNeuron !== null) { setLoNeuron(null); hideTip(); return; }
+      if (S.hsSel !== null) { clearHsSel(); hideTip(); return; }
+      hideTip();
+      return;
+    }
+    if (inField) return;
+    if (ev.key === "g" || ev.key === "G") {
+      setScaleMode(S.scaleMode === "per" ? "global" : "per");
+    } else if (ev.key === "[") {
+      setF(S.F - 1);
+    } else if (ev.key === "]") {
+      setF(S.F + 1);
+    }
+  });
+
+  /* ---------- dirty-flag render loop: repaint only what changed ---------- */
+  const dirty = { panels: new Set(), bits: false, zoom: false, lo: false,
+                  hs: false };
+  let rafPending = false;
+  function pump() {
+    rafPending = false;
+    if (dirty.panels.size) {
+      for (const i of dirty.panels) renderPanel(i);
+      dirty.panels.clear();
+    }
+    if (dirty.bits) { drawBits(); dirty.bits = false; }
+    if (dirty.zoom) { renderZoom(); dirty.zoom = false; }
+    if (dirty.lo) { drawLoAll(); dirty.lo = false; }
+    if (dirty.hs) { drawHsAll(); dirty.hs = false; }
+  }
+  function schedule() {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(pump);
+  }
+  function markDirty(i) { dirty.panels.add(i); schedule(); }
+  function markAllDirty() {
+    for (let i = 0; i < TENSOR_ORDER.length; i++) dirty.panels.add(i);
+    dirty.bits = true;
+    dirty.lo = true;
+    dirty.hs = true;
+    schedule();
+  }
+  function markBitsDirty() { dirty.bits = true; schedule(); }
+  function markZoomDirty() { dirty.zoom = true; schedule(); }
+  function markLoDirty() { dirty.lo = true; schedule(); }
+  function markHsDirty() { dirty.hs = true; schedule(); }
+
+  window.addEventListener("resize", () => {
+    imageCache.clear();           /* dpr may have changed with browser zoom */
+    loImgCache.clear();
+    hsImgCache.clear();
+    markAllDirty();
+    if (S.zoomIdx !== null) markZoomDirty();
+  });
+
+  /* ---------- MLP layout comparison — the page's one derived view ----------
+   * Physical slot j of a variant shows original neuron new_to_old[j]; the
+   * fc1 row and fc2 column move together and no stored value changes. The
+   * per-tensor color scale is permutation-invariant (same multiset), so the
+   * same scale serves both sides of each pair. The re-permuted tensors'
+   * checksums are matched against the C-verified variants in assertAll. */
+  const loFc1 = model.byName.get("layers.0.mlp_fc1");
+  const loFc2 = model.byName.get("layers.0.mlp_fc2");
+  const loProfs = neuronProfiles(loFc1.raw, loFc2.raw);
+  const loVar = new Map(LAYOUTS.variants.map((v) => [v.name, v]));
+  const loPos = new Map(LAYOUTS.variants.map((v) => [v.name, invertOrder(v.new_to_old)]));
+  const LO_CELL = 4;                      /* css px per cell (display-only)  */
+  const LO_PANES = [
+    { cv: document.getElementById("loFc1L"), which: "fc1", side: "L", cd: 1, D: 1 },
+    { cv: document.getElementById("loFc1R"), which: "fc1", side: "R", cd: 1, D: 1 },
+    { cv: document.getElementById("loFc2L"), which: "fc2", side: "L", cd: 1, D: 1 },
+    { cv: document.getElementById("loFc2R"), which: "fc2", side: "R", cd: 1, D: 1 },
+  ];
+  const loOrderOf = (name) => loVar.get(name).new_to_old;
+  const loPaneOrder = (p) => (p.side === "L" ? "original" : S.loOrder);
+
+  function loImage(orderName, which) {
+    const key = orderName + "|" + which + "|" + S.scaleMode;
+    let cv = loImgCache.get(key);
+    if (!cv) {
+      const t = which === "fc1" ? loFc1 : loFc2;
+      const ord = loOrderOf(orderName);
+      const raw = orderName === "original" ? t.raw
+        : which === "fc1" ? permuteFc1Rows(t.raw, ord) : permuteFc2Cols(t.raw, ord);
+      cv = document.createElement("canvas");
+      cv.width = t.cols; cv.height = t.rows;
+      cv.getContext("2d").putImageData(
+        new ImageData(buildCellImage(raw, activeMax(t.name)), t.cols, t.rows), 0, 0);
+      loImgCache.set(key, cv);
+    }
+    return cv;
+  }
+
+  function drawLoPane(p) {
+    const t = p.which === "fc1" ? loFc1 : loFc2;
+    const D = dpr();
+    const cd = Math.max(2, Math.round(LO_CELL * D));
+    p.cd = cd; p.D = D;
+    const w = t.cols * cd, h = t.rows * cd;
+    p.cv.width = w; p.cv.height = h;
+    p.cv.style.width = (w / D) + "px";
+    p.cv.style.height = (h / D) + "px";
+    const ctx = p.cv.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(loImage(loPaneOrder(p), p.which), 0, 0, t.cols, t.rows, 0, 0, w, h);
+    ctx.strokeStyle = LINE;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+    if (S.loNeuron !== null) {
+      const pos = loPos.get(loPaneOrder(p))[S.loNeuron];
+      const x = p.which === "fc2" ? pos * cd : 0;
+      const y = p.which === "fc1" ? pos * cd : 0;
+      const rw = p.which === "fc2" ? cd : w;
+      const rh = p.which === "fc1" ? cd : h;
+      ctx.lineWidth = Math.max(2, Math.round(2 * D));
+      ctx.strokeStyle = "#0b0e14";
+      ctx.strokeRect(x + 0.5, y + 0.5, rw - 1, rh - 1);
+      ctx.lineWidth = Math.max(1, Math.round(D));
+      ctx.strokeStyle = "#ffffff";
+      ctx.strokeRect(x + 0.5, y + 0.5, rw - 1, rh - 1);
+    }
+  }
+  function drawLoAll() { for (const p of LO_PANES) drawLoPane(p); }
+
+  const loL1 = (a, b) => adjacencyScore(loProfs, [a, b]).toString();
+  function loSlotLine(name, L) {
+    const ord = loOrderOf(name), pos = loPos.get(name)[L];
+    let s = '<div><span class="k">' + name + ":</span> <b>slot " + pos + "</b>";
+    if (pos > 0)
+      s += ' <span class="k">· L1 to slot ' + (pos - 1) + " (neuron " + ord[pos - 1] +
+           "):</span> <b>" + loL1(L, ord[pos - 1]) + "</b>";
+    if (pos < 127)
+      s += ' <span class="k">· L1 to slot ' + (pos + 1) + " (neuron " + ord[pos + 1] +
+           "):</span> <b>" + loL1(L, ord[pos + 1]) + "</b>";
+    return s + "</div>";
+  }
+  function updateLoReadout() {
+    const el = document.getElementById("loReadout");
+    if (S.loNeuron === null) {
+      el.innerHTML = '<span class="k">hover a pair panel — or focus one and use ' +
+        "arrow keys — to follow one neuron across both orders. L1 numbers are exact " +
+        "BigInt sums of |Δraw| between adjacent neurons' 64-int profiles (fc1 row " +
+        "followed by fc2 column); the table's score is the Σ of all 127 of them.</span>";
+      return;
+    }
+    const L = S.loNeuron;
+    el.innerHTML =
+      '<div><span class="k">original neuron</span> <b>' + L +
+      '</b> <span class="k">— its fc1 row and fc2 column hold the same 64 stored ' +
+      "values in every order; only the position moves.</span></div>" +
+      loSlotLine("original", L) +
+      (S.loOrder === "original" ? "" : loSlotLine(S.loOrder, L));
+  }
+  function loTipHTML(p, slot, L) {
+    const name = loPaneOrder(p);
+    return '<span class="k">' + (p.which === "fc1" ? "mlp_fc1 row" : "mlp_fc2 col") +
+      "</span> " + slot + '<span class="k"> of ' + name + " order = neuron</span> " +
+      L + (name === "original" ? "" :
+        '<br><span class="k">original slot</span> ' + L);
+  }
+  function setLoNeuron(L) {
+    if (L === S.loNeuron) return;
+    S.loNeuron = L;
+    updateLoReadout();
+    markLoDirty();
+  }
+
+  const loBtns = Array.from(document.querySelectorAll("#loBar button[data-order]"));
+  for (const b of loBtns)
+    b.addEventListener("click", () => setLoOrder(b.dataset.order, true));
+  const loTable = document.getElementById("loTable");
+  {
+    let html = "<tr><th>order</th><th>moved</th>" +
+      "<th>adjacency score (exact Σ|Δraw|)</th><th>× original</th>" +
+      "<th>variant model sha256</th></tr>";
+    for (const v of LAYOUTS.variants)
+      html += '<tr data-order="' + v.name + '" title="show ' + v.name +
+        ' in the right-hand panels"><td>' + v.name + "</td>" +
+        '<td class="num">' + v.moved_neurons + "/128</td>" +
+        '<td class="num">' + v.selected_score + "</td>" +
+        '<td class="num">' + v.selected_over_original + "</td>" +
+        '<td><span title="' + v.model_sha256 + '">' +
+        v.model_sha256.slice(0, 12) + "…</span></td></tr>";
+    loTable.innerHTML = html;
+    loTable.addEventListener("click", (ev) => {
+      let el = ev.target;
+      while (el && el !== loTable && !(el.dataset && el.dataset.order))
+        el = el.parentElement;
+      if (el && el !== loTable && el.dataset.order) setLoOrder(el.dataset.order, true);
+    });
+  }
+
+  function setLoOrder(name, updateHash) {
+    if (!loVar.has(name)) return;
+    S.loOrder = name;
+    const v = loVar.get(name);
+    for (const b of loBtns) {
+      const on = b.dataset.order === name;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    for (const tr of loTable.querySelectorAll("tr[data-order]"))
+      tr.classList.toggle("sel", tr.dataset.order === name);
+    document.getElementById("loLblFc1R").textContent =
+      "mlp_fc1 — " + name + " order (rows = physical slots)";
+    document.getElementById("loLblFc2R").textContent =
+      "mlp_fc2 — " + name + " order (columns = physical slots)";
+    document.getElementById("loSel").textContent =
+      name === "original"
+        ? "identity — right panels equal the literal panels above"
+        : v.moved_neurons + "/128 neurons move · score = " +
+          v.selected_over_original + " × original";
+    updateLoReadout();
+    markLoDirty();
+    if (updateHash) updateAtlasHash();
+  }
+
+  for (const p of LO_PANES) {
+    p.cv.addEventListener("mousemove", (ev) => {
+      const rect = p.cv.getBoundingClientRect();
+      const along = p.which === "fc1"
+        ? (ev.clientY - rect.top) : (ev.clientX - rect.left);
+      const slot = Math.floor(along * p.D / p.cd);
+      if (slot < 0 || slot > 127) { hideTip(); return; }
+      const L = loOrderOf(loPaneOrder(p))[slot];
+      setLoNeuron(L);
+      showTipAt(ev.clientX, ev.clientY, loTipHTML(p, slot, L));
+    });
+    p.cv.addEventListener("mouseleave", hideTip);
+    p.cv.addEventListener("keydown", (ev) => {
+      const name = loPaneOrder(p);
+      const ord = loOrderOf(name);
+      const fwd = p.which === "fc1" ? "ArrowDown" : "ArrowRight";
+      const back = p.which === "fc1" ? "ArrowUp" : "ArrowLeft";
+      let slot = S.loNeuron === null ? -1 : loPos.get(name)[S.loNeuron];
+      if (ev.key === fwd) slot = Math.min(127, slot + 1);
+      else if (ev.key === back) slot = slot <= 0 ? 0 : slot - 1;
+      else if (ev.key === "Home") slot = 0;
+      else if (ev.key === "End") slot = 127;
+      else if (ev.key === "Escape" && S.loNeuron !== null) {
+        ev.stopPropagation(); setLoNeuron(null); return;
+      } else return;
+      ev.preventDefault();
+      setLoNeuron(ord[slot]);
+    });
+  }
+
+  document.getElementById("loNote").textContent =
+    LAYOUTS.claim_boundary.join(" ") +
+    " Oracle replay: " + LAYOUTS.oracle_replay +
+    ". Orders generated by " + LAYOUTS.provenance.generator +
+    " (seed \"" + LAYOUTS.provenance.seed + "\"), re-proved by " +
+    LAYOUTS.provenance.verified_by + " and by this page's self-check." +
+    " Deep link: atlas.html#order=smooth.";
+
+  /* ---------- hidden-coordinate swap — the page's second derived view ----
+   * One vendored transposition of residual coordinates 0<->31, applied to
+   * the residual axis of all nine learned tensors at once (columns of wte,
+   * wpe, lm_head, wq, wk, wv, fc1; rows of wo, fc2). All nine pairs are
+   * drawn below one another; physical index j of a swapped pane shows
+   * original coordinate new_to_old[j]. No stored value changes, so the
+   * per-tensor color scale serves both sides of each pair. assertAll
+   * matches the re-permuted tensors' checksums against the variant
+   * checkpoint the build's C oracle replayed bit-identically. */
+  const HS_N2O = HIDDEN.swap.new_to_old;
+  const HS_POS = new Int32Array(32);
+  for (let j = 0; j < 32; j++) HS_POS[HS_N2O[j]] = j;
+  const hsRec = new Map(HIDDEN.tensors.map((t) => [t.name, t]));
+  /* cells are 8 css px, except along a 128-long axis (4 px) so fc1/fc2 keep
+   * the footprint of the MLP section above (display-only geometry) */
+  const hsCellX = (t) => (t.cols > 32 ? 4 : 8);
+  const hsCellY = (t) => (t.rows > 32 ? 4 : 8);
+  const hsShort = (nm) =>
+    nm.replace("layers.0.attn_", "").replace("layers.0.mlp_", "");
+  const HS_SHORT2FULL = new Map(TENSOR_ORDER.map((nm) => [hsShort(nm), nm]));
+  /* trading lanes are tinted by ORIGINAL coordinate so the trade is visible:
+   * the green lane is original coordinate 0 wherever it physically sits */
+  const HS_LANE_COLOR = new Map([
+    [HIDDEN.swap.left, "#79e6b0"],        /* green  = original coordinate 0  */
+    [HIDDEN.swap.right, "#ffb86b"],       /* orange = original coordinate 31 */
+  ]);
+  const HS_PANES = [];
+  const hsReadouts = new Map();           /* tensor name -> readout element  */
+  {
+    const root = document.getElementById("hsPairs");
+    for (const nm of TENSOR_ORDER) {
+      const t = model.byName.get(nm), rec = hsRec.get(nm);
+      const word = rec.axis === "column" ? "column" : "row";
+      const block = document.createElement("div");
+      block.className = "hs-tensor";
+      block.id = "hs-" + hsShort(nm);
+      const meta = document.createElement("div");
+      meta.className = "hs-meta";
+      meta.innerHTML = "<b>" + nm + "</b> · " + t.rows + " × " + t.cols +
+        " · residual axis = " + word + "s · " + rec.changed_positions + "/" +
+        rec.elements + " positions move";
+      const pairs = document.createElement("div");
+      pairs.className = "lo-pairs";
+      for (const side of ["L", "R"]) {
+        const box = document.createElement("div");
+        box.className = "lo-block";
+        const lbl = document.createElement("div");
+        lbl.className = "lbl";
+        lbl.textContent = side === "L"
+          ? "original — " + word + "s = residual coordinates"
+          : "swapped — " + word + " j holds original coordinate new_to_old[j]";
+        const scroll = document.createElement("div");
+        scroll.className = "lo-scroll";
+        const cv = document.createElement("canvas");
+        cv.className = "heat";
+        cv.tabIndex = 0;
+        cv.setAttribute("aria-label", side === "L"
+          ? nm + " in original coordinate order; arrow keys step through" +
+            " residual lanes"
+          : nm + " with residual coordinates " + HIDDEN.swap.left + " and " +
+            HIDDEN.swap.right + " swapped; arrow keys step through residual" +
+            " lanes");
+        scroll.appendChild(cv);
+        box.appendChild(lbl);
+        box.appendChild(scroll);
+        pairs.appendChild(box);
+        HS_PANES.push({ cv: cv, nm: nm, side: side, cdx: 1, cdy: 1, D: 1 });
+      }
+      const ro = document.createElement("div");
+      ro.className = "hs-readout";
+      ro.setAttribute("aria-live", "polite");
+      block.appendChild(meta);
+      block.appendChild(pairs);
+      block.appendChild(ro);
+      root.appendChild(block);
+      hsReadouts.set(nm, ro);
+    }
+  }
+
+  function hsImage(nm, side) {
+    const key = nm + "|" + side + "|" + S.scaleMode;
+    let cv = hsImgCache.get(key);
+    if (!cv) {
+      const t = model.byName.get(nm);
+      const raw = side === "L" ? t.raw
+        : permuteHiddenAxis(t.raw, t.rows, t.cols,
+                            hsRec.get(nm).axis, HS_N2O);
+      cv = document.createElement("canvas");
+      cv.width = t.cols; cv.height = t.rows;
+      cv.getContext("2d").putImageData(
+        new ImageData(buildCellImage(raw, activeMax(t.name)), t.cols, t.rows), 0, 0);
+      hsImgCache.set(key, cv);
+    }
+    return cv;
+  }
+
+  /* lane rectangle: a full column for column tensors, a full row for rows */
+  function hsLaneRect(axis, pos, cdx, cdy, w, h) {
+    return axis === "column"
+      ? { x: pos * cdx, y: 0, w: cdx, h: h }
+      : { x: 0, y: pos * cdy, w: w, h: cdy };
+  }
+
+  function drawHsPane(p) {
+    const t = model.byName.get(p.nm);
+    const axis = hsRec.get(p.nm).axis;
+    const D = dpr();
+    const cdx = Math.max(2, Math.round(hsCellX(t) * D));
+    const cdy = Math.max(2, Math.round(hsCellY(t) * D));
+    p.cdx = cdx; p.cdy = cdy; p.D = D;
+    const w = t.cols * cdx, h = t.rows * cdy;
+    p.cv.width = w; p.cv.height = h;
+    p.cv.style.width = (w / D) + "px";
+    p.cv.style.height = (h / D) + "px";
+    const ctx = p.cv.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(hsImage(p.nm, p.side), 0, 0, t.cols, t.rows, 0, 0, w, h);
+    ctx.strokeStyle = LINE;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+    /* trading lanes, tinted by ORIGINAL coordinate: the green lane is
+     * original coordinate 0 wherever it physically sits (position 0 in an
+     * original pane, position 31 in a swapped pane) — the translucent fill
+     * plus edge stroke is display-only and covers whole lanes, never
+     * individual values */
+    for (const [L, col] of HS_LANE_COLOR) {
+      const pos = p.side === "L" ? L : HS_POS[L];
+      const rc = hsLaneRect(axis, pos, cdx, cdy, w, h);
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = col;
+      ctx.fillRect(rc.x, rc.y, rc.w, rc.h);
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = Math.max(2, Math.round(2 * D));
+      ctx.strokeStyle = col;
+      ctx.strokeRect(rc.x + 0.5, rc.y + 0.5, rc.w - 1, rc.h - 1);
+    }
+    if (S.hsSel && S.hsSel.name === p.nm) {
+      const pos = p.side === "L" ? S.hsSel.lane : HS_POS[S.hsSel.lane];
+      const rc = hsLaneRect(axis, pos, cdx, cdy, w, h);
+      ctx.lineWidth = Math.max(2, Math.round(2 * D));
+      ctx.strokeStyle = "#0b0e14";
+      ctx.strokeRect(rc.x + 0.5, rc.y + 0.5, rc.w - 1, rc.h - 1);
+      ctx.lineWidth = Math.max(1, Math.round(D));
+      ctx.strokeStyle = "#ffffff";
+      ctx.strokeRect(rc.x + 0.5, rc.y + 0.5, rc.w - 1, rc.h - 1);
+    }
+  }
+  function drawHsAll() { for (const p of HS_PANES) drawHsPane(p); }
+
+  function updateHsReadout(nm) {
+    const el = hsReadouts.get(nm);
+    if (!el) return;
+    if (!S.hsSel || S.hsSel.name !== nm) { el.innerHTML = ""; return; }
+    const rec = hsRec.get(nm);
+    const word = rec.axis === "column" ? "column" : "row";
+    const L = S.hsSel.lane, pos = HS_POS[L], moved = pos !== L;
+    const t = model.byName.get(nm);
+    const v = rec.axis === "column" ? t.raw[L] : t.raw[L * t.cols];
+    el.innerHTML =
+      '<div><span class="k">residual coordinate</span> <b>' + L + "</b>" +
+      ' <span class="k">· ' + hsShort(nm) + " " + word + "</span> <b>" +
+      L + '</b> <span class="k">in the original → ' + word + "</span> <b>" + pos +
+      '</b> <span class="k">in the swapped layout' +
+      (moved ? "" : " (identity — outside the swapped pair)") + "</span></div>" +
+      '<div><span class="k">first stored value of this ' + word +
+      ": raw</span> <b>" + v + '</b> <span class="k">=</span> <b>' +
+      Q48.toDecimalString(v) +
+      '</b> <span class="k">— identical bytes at both positions.</span></div>';
+  }
+  function hsTipHTML(p, lane, L) {
+    const word = hsRec.get(p.nm).axis === "column" ? "col" : "row";
+    return '<span class="k">' + hsShort(p.nm) + " " + word + "</span> " +
+      lane + '<span class="k"> of ' + (p.side === "L" ? "original" : "swapped") +
+      " = coordinate</span> " + L +
+      (p.side === "R" && lane !== L
+        ? '<br><span class="k">moved from ' + word + "</span> " + L : "");
+  }
+  function setHsSel(name, lane) {
+    if (S.hsSel && S.hsSel.name === name && S.hsSel.lane === lane) return;
+    const prev = S.hsSel ? S.hsSel.name : null;
+    S.hsSel = { name: name, lane: lane };
+    if (prev && prev !== name) updateHsReadout(prev);
+    updateHsReadout(name);
+    markHsDirty();
+  }
+  function clearHsSel() {
+    if (!S.hsSel) return;
+    const prev = S.hsSel.name;
+    S.hsSel = null;
+    updateHsReadout(prev);
+    markHsDirty();
+  }
+
+  const hsTable = document.getElementById("hsTable");
+  {
+    let html = "<tr><th>tensor</th><th>swapped axis</th>" +
+      "<th>moved positions</th><th>variant fnv1a64</th></tr>";
+    for (const nm of TENSOR_ORDER) {
+      const rec = hsRec.get(nm);
+      html += '<tr data-hs="' + nm + '" title="jump to the ' + nm +
+        ' pair below"><td>' + nm + "</td>" +
+        "<td>" + rec.axis + "s</td>" +
+        '<td class="num">' + rec.changed_positions + "/" + rec.elements + "</td>" +
+        '<td class="num">' + rec.fnv1a64_variant + "</td></tr>";
+    }
+    html += '<tr><td>all nine</td><td></td><td class="num">' +
+      HIDDEN.totals.changed_positions + "/" + HIDDEN.totals.learned_positions +
+      "</td><td></td></tr>";
+    hsTable.innerHTML = html;
+    hsTable.addEventListener("click", (ev) => {
+      let el = ev.target;
+      while (el && el !== hsTable && !(el.dataset && el.dataset.hs))
+        el = el.parentElement;
+      if (el && el !== hsTable && el.dataset.hs)
+        hsJumpTo(el.dataset.hs, { hash: true, scroll: true });
+    });
+  }
+
+  /* remember + optionally scroll to one pair; the target survives in the
+   * hash (#hidden=<tensor>) so the jump is shareable and composes with
+   * #order= */
+  function hsJumpTo(name, opts) {
+    if (!hsRec.has(name)) return;
+    S.hsJump = name;
+    for (const tr of hsTable.querySelectorAll("tr[data-hs]"))
+      tr.classList.toggle("sel", tr.dataset.hs === name);
+    if (opts && opts.scroll) {
+      const el = document.getElementById("hs-" + hsShort(name));
+      if (el && el.scrollIntoView) el.scrollIntoView();
+    }
+    if (opts && opts.hash) updateAtlasHash();
+  }
+
+  for (const p of HS_PANES) {
+    p.cv.addEventListener("mousemove", (ev) => {
+      const t = model.byName.get(p.nm);
+      const axis = hsRec.get(p.nm).axis;
+      const rect = p.cv.getBoundingClientRect();
+      const lane = axis === "column"
+        ? Math.floor((ev.clientX - rect.left) * p.D / p.cdx)
+        : Math.floor((ev.clientY - rect.top) * p.D / p.cdy);
+      const nLanes = axis === "column" ? t.cols : t.rows;
+      if (lane < 0 || lane >= nLanes) { hideTip(); return; }
+      const L = p.side === "L" ? lane : HS_N2O[lane];
+      setHsSel(p.nm, L);
+      showTipAt(ev.clientX, ev.clientY, hsTipHTML(p, lane, L));
+    });
+    p.cv.addEventListener("mouseleave", hideTip);
+    p.cv.addEventListener("keydown", (ev) => {
+      const k = ev.key;
+      const mine = S.hsSel && S.hsSel.name === p.nm;
+      let lane = !mine ? -1
+        : (p.side === "L" ? S.hsSel.lane : HS_POS[S.hsSel.lane]);
+      if (k === "ArrowRight" || k === "ArrowDown") lane = Math.min(31, lane + 1);
+      else if (k === "ArrowLeft" || k === "ArrowUp") lane = lane <= 0 ? 0 : lane - 1;
+      else if (k === "Home") lane = 0;
+      else if (k === "End") lane = 31;
+      else if (k === "Escape" && S.hsSel !== null) {
+        ev.stopPropagation(); clearHsSel(); return;
+      } else return;
+      ev.preventDefault();
+      setHsSel(p.nm, p.side === "L" ? lane : HS_N2O[lane]);
+    });
+  }
+
+  document.getElementById("hsNote").textContent =
+    HIDDEN.claim_boundary.join(" ") +
+    " Oracle replay: " + HIDDEN.oracle_replay +
+    ". Swap generated by " + HIDDEN.provenance.generator +
+    ", re-proved by " + HIDDEN.provenance.verified_by +
+    " and by this page's self-check. Swapped checkpoint sha256 " +
+    HIDDEN.variant_sha256 +
+    ". Deep links: atlas.html#hidden (section), atlas.html#hidden=fc2 (one pair).";
+
+  /* ---------- deep links: #order=<layout> & #hidden[=<tensor>] ---------- */
+  function updateAtlasHash() {
+    const parts = [];
+    if (S.loOrder !== "original") parts.push("order=" + S.loOrder);
+    if (S.hsJump) parts.push("hidden=" + hsShort(S.hsJump));
+    try {
+      history.replaceState(null, "", parts.length ? "#" + parts.join("&") : "#");
+    } catch (e) { /* file:// quirks */ }
+  }
+  /* returns which families the hash names; a bare #hidden (no tensor)
+   * targets the whole section */
+  function applyAtlasHash() {
+    const h = location.hash || "";
+    const mo = /[#&]order=([a-z]+)/.exec(h);
+    if (mo && loVar.has(mo[1]) && mo[1] !== S.loOrder) setLoOrder(mo[1], false);
+    const mh = /[#&]hidden(?:=([a-z0-9_]+))?(?=&|$)/.exec(h);
+    const full = mh && mh[1] ? HS_SHORT2FULL.get(mh[1]) : undefined;
+    if (full) hsJumpTo(full, {});
+    return { order: !!mo, hidden: !!mh, hsPair: full || null };
+  }
+  const hsScrollTarget = (seen) => document.getElementById(
+    seen.hsPair ? "hs-" + hsShort(seen.hsPair) : "hsCard");
+  setLoOrder("original", false);
+  {
+    const seen = applyAtlasHash();
+    window.addEventListener("hashchange", () => {
+      const now = applyAtlasHash();
+      if (now.hidden) hsScrollTarget(now).scrollIntoView();
+      else if (now.order) document.getElementById("loCard").scrollIntoView();
+    });
+    if (seen.hidden || seen.order) {
+      /* after the first painted frame, bring the deep-linked target into view */
+      const el = seen.hidden ? hsScrollTarget(seen)
+        : document.getElementById("loCard");
+      requestAnimationFrame(() => requestAnimationFrame(() => el.scrollIntoView()));
+    }
+  }
+  /* subtitle jump links: plain anchors would clobber the state hash */
+  for (const [id, target] of [["jumpLo", "loCard"], ["jumpHs", "hsCard"]])
+    document.getElementById(id).addEventListener("click", (ev) => {
+      ev.preventDefault();
+      document.getElementById(target).scrollIntoView();
+    });
+
+  /* ---------- first paint ---------- */
+  updateScaleLines();
+  updateFInfo();
+  updateInspectorFromCursor();
+  markAllDirty();
+}
+
+/* ---------- entry point ---------- */
+const IS_BROWSER = typeof document !== "undefined";
+if (IS_BROWSER) { init(); } else { nodeSelfTest(); }
+</script>
+</body>
+</html>

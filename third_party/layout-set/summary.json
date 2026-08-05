@@ -1,0 +1,74 @@
+{
+  "claim_boundary": "Smooth and spread refer to adjacent-neuron profile distance, not parameter density or measured runtime performance.",
+  "format": "int-llm-mlp-layout-set-v1",
+  "metric": "adjacent-neuron-weight-profile-l1",
+  "microgpt_oracle": "vocab=27 block=8 starts=27 forwards=216 logits=5832\nlogits_fnv64=1a0d733eab674a86\nsamples_fnv64=f3b731da0b03b1f9",
+  "source": "third_party/int-llm/model.mgw",
+  "source_sha256": "466cfe9dba7b888cdaa23dedf4b10351826795793448c8e95dcb0f7a61ed33eb",
+  "variants": [
+    {
+      "layer_scores": [
+        {
+          "layer": 0,
+          "moved_neurons": 0,
+          "original_score": "326549568661222969",
+          "profile_width": 64,
+          "selected_over_original": "1.000000000000",
+          "selected_score": "326549568661222969"
+        }
+      ],
+      "model": "original/model.mgw",
+      "model_sha256": "466cfe9dba7b888cdaa23dedf4b10351826795793448c8e95dcb0f7a61ed33eb",
+      "name": "original",
+      "order": "original/mlp-order.json"
+    },
+    {
+      "layer_scores": [
+        {
+          "layer": 0,
+          "moved_neurons": 127,
+          "original_score": "326549568661222969",
+          "profile_width": 64,
+          "selected_over_original": "0.775829450667",
+          "selected_score": "253346772469892160"
+        }
+      ],
+      "model": "smooth/model.mgw",
+      "model_sha256": "46e9e50a18b007dbb580da6c83a91072983e03f91b80856724c6749ffd37a878",
+      "name": "smooth",
+      "order": "smooth/mlp-order.json"
+    },
+    {
+      "layer_scores": [
+        {
+          "layer": 0,
+          "moved_neurons": 128,
+          "original_score": "326549568661222969",
+          "profile_width": 64,
+          "selected_over_original": "1.161600129493",
+          "selected_score": "379320021242649857"
+        }
+      ],
+      "model": "spread/model.mgw",
+      "model_sha256": "e81eefb8c5be51c1cc39bed7eeb7e17394c989fb11459db304d428acbef9cb9e",
+      "name": "spread",
+      "order": "spread/mlp-order.json"
+    },
+    {
+      "layer_scores": [
+        {
+          "layer": 0,
+          "moved_neurons": 126,
+          "original_score": "326549568661222969",
+          "profile_width": 64,
+          "selected_over_original": "1.008491196466",
+          "selected_score": "329322365204678992"
+        }
+      ],
+      "model": "random/model.mgw",
+      "model_sha256": "4bf80788791780306569d2c1cab20bdfb32bbf8e81c32b3709ff748014199e26",
+      "name": "random",
+      "order": "random/mlp-order.json"
+    }
+  ]
+}

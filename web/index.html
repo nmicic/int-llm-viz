@@ -1,0 +1,439 @@
+<!doctype html>
+<!--
+  Copyright 2026 Nenad Mićić
+  SPDX-License-Identifier: Apache-2.0
+
+  index.html — landing page for int-llm-viz.
+  Self-contained: the only data embedded is the SUMMARY_JSON build
+  provenance (derived from the committed checkpoint and trace), the
+  LAYOUTS_JSON verified MLP layout set, and the HIDDEN_JSON verified
+  residual-coordinate swap.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>int-llm-viz — exact anatomy of a tiny integer GPT</title>
+<style>
+__THEME_CSS__
+
+/* ---- page-specific ---- */
+.hero { margin-top: 6px; }
+.viewgrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+@media (max-width: 900px) { .viewgrid { grid-template-columns: 1fr; } }
+
+.spike { display: flex; flex-direction: column; gap: 6px; }
+.spike h2 { margin: 0; }
+.spike .go { margin-top: auto; padding-top: 8px; }
+.spike .exact {
+  font-size: 12px; color: var(--dim);
+  border-left: 2px solid var(--gold); padding-left: 8px;
+}
+.kv { border-collapse: collapse; font: 12px var(--mono); }
+.kv td { padding: 2px 10px 2px 0; vertical-align: top; }
+.kv td:first-child { color: var(--dim); white-space: nowrap; }
+.names { display: flex; flex-wrap: wrap; gap: 6px; }
+.names .chip {
+  font: 12px var(--mono); color: var(--ink);
+  background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 999px; padding: 2px 9px;
+}
+.sha { overflow-wrap: anywhere; }
+ul.tight { margin: 6px 0; padding-left: 20px; }
+ul.tight li { margin: 3px 0; }
+.sib { border-left: 2px solid var(--line); padding-left: 10px; margin: 8px 0; }
+.sib b { font-family: var(--mono); font-size: 13px; }
+.keyhint { color: var(--dim); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+<!--UNBUILT-NOTICE--><div style="background:#3a1420;border:1px solid #7a2b3b;color:#ffd6d6;font:14px/1.6 ui-monospace,Menlo,Consolas,monospace;padding:12px 16px;border-radius:10px;margin:12px 0;max-width:72ch">
+You are looking at the <b>unbuilt source template</b> (web/index.html).
+Its data placeholders are not filled in, so no checkpoint, styling, or
+visualization can appear here. Open the built page
+<a href="../site/index.html" style="color:#ffd166">site/index.html</a>
+instead &mdash; it is committed; <b>make</b> regenerates it.
+</div><!--/UNBUILT-NOTICE-->
+  <nav class="topnav" aria-label="pages">
+    <span class="here">index</span>
+    <a href="atlas.html">atlas</a>
+    <a href="trace.html">trace</a>
+    <a href="space.html">space</a>
+    <a href="weights.html">weights</a>
+    <span style="flex:1"></span>
+    <span id="selfcheck" class="badge info" role="status">self-check: running…</span>
+    <button id="helpbtn" aria-haspopup="dialog">? help</button>
+  </nav>
+
+  <header class="hero">
+    <h1>Exact anatomy of a tiny integer GPT</h1>
+    <p class="sub">An independent visual exploration of the complete
+    <span class="mono">model.mgw</span> checkpoint — 14,272 int64 weights in
+    Q16.48 fixed point, a 27-token vocabulary, one transformer layer — where
+    every displayed value is either bit-exact or explicitly labeled as
+    display geometry.</p>
+  </header>
+
+  <section class="viewgrid" aria-label="the four views">
+    <article class="card spike">
+      <h2><a href="atlas.html">1 · Weight atlas</a></h2>
+      <p>All nine weight tensors as heatmaps in literal matrix coordinates —
+      every one of the 14,272 parameters at its exact row and column, with
+      head boundaries marked, per-tensor histograms, a bit-occupancy view,
+      and an exact round-to-F-bits preview. Below the panels, two derived
+      comparison sections: <a href="atlas.html#order=smooth">four MLP neuron
+      layouts</a> and <a href="atlas.html#hidden">the residual coordinate
+      swap</a>.</p>
+      <p class="exact">Exact: raw int64, hex, and full decimal (≤ 48 fraction
+      digits) for every cell; checksums tie the in-browser parse to the C
+      loader, bit for bit.</p>
+      <p class="go keyhint">open with <kbd>1</kbd></p>
+    </article>
+    <article class="card spike">
+      <h2><a href="trace.html">2 · Inference trace</a></h2>
+      <p>The model's complete recorded output — 20 generated names — replayed
+      step by step: residual stream, four attention heads, 128 ReLU units,
+      logits, probabilities, and the exact roulette draw that picked each
+      character.</p>
+      <p class="exact">Exact: every number was produced by the original C
+      runtime, and your browser re-derives each step in BigInt integer
+      arithmetic and verifies it matches.</p>
+      <p class="go keyhint">open with <kbd>2</kbd></p>
+    </article>
+    <article class="card spike">
+      <h2><a href="space.html">3 · Embedding space</a></h2>
+      <p>62 vectors that live in the same 32-dimensional residual stream —
+      27 token embeddings, 27 output directions, 8 position vectors — in a
+      hand-rolled 3-D view with literal coordinate axes, a derived PCA mode,
+      and a four-panel PC1–4 treatment.</p>
+      <p class="exact">Exact: literal axes are stored coordinates; derived
+      axes are labeled as such, and the basis provenance (an exact integer
+      scatter matrix) is re-verified in the page.</p>
+      <p class="go keyhint">open with <kbd>3</kbd></p>
+    </article>
+    <article class="card spike">
+      <h2><a href="weights.html">4 · Weight explorer</a></h2>
+      <p>Any weight matrix as a 3-D point cloud, a heatmap with exact
+      readouts, and the checkpoint's literal byte layout — plus an exact
+      <b>contribution</b> mode (each stored weight × the recorded input it
+      met at a chosen trace step) and a <b>4-D shadows</b> view: four
+      projections of (column, row, weight, contribution) under one shared
+      camera. The address bar carries the whole scene as a deep link, and a
+      captioned tour advances only by hand.</p>
+      <p class="exact">Exact: every readout is the stored int64 or the exact
+      Q16.48 product fp_mul(w, x); each contribution row re-sums in BigInt
+      to the recorded C-oracle output vector.</p>
+      <p class="go keyhint">open with <kbd>4</kbd></p>
+    </article>
+  </section>
+
+  <section class="card" aria-label="MLP layout set">
+    <h2>…and one checkpoint in four MLP neuron orders</h2>
+    <p style="max-width: 80ch">The sibling
+    <span class="mono">int-llm-coordinate-permutation</span> repo reorders this
+    exact checkpoint's 128 MLP neurons into three alternative physical layouts —
+    pure row/column re-indexings that change neuron adjacency only, never a
+    stored value. This repo re-proves the whole set on every test run
+    (<span class="mono">tools/derive_layouts.py</span>): each variant checkpoint
+    is reconstructed from the committed original and must hash to the recorded
+    sha-256, every adjacency score is recomputed in exact integer arithmetic,
+    and the C oracle replays all variants bit-identically — each step's 128-wide
+    pre-activation vector is exactly the original's, reindexed. Compare them
+    side by side in the atlas:
+    <a href="atlas.html#order=smooth">smooth</a> ·
+    <a href="atlas.html#order=spread">spread</a> ·
+    <a href="atlas.html#order=random">random</a>.</p>
+    <table class="kv" id="lotable" aria-label="layout variants"></table>
+    <p class="sub" id="lonote" style="max-width: 80ch"></p>
+    <p style="max-width: 80ch">The same sibling generator also swaps two coordinates
+    of the 32-wide residual basis (0 ↔ 31) through <b>every</b> learned matrix at
+    once — 892 of the 14,272 stored positions move, none changes value, and this
+    repo's C oracle replays the swapped checkpoint bit-identically
+    (<span class="mono">tools/derive_hidden.py</span> re-proves it on every test
+    run). All nine matrix pairs are drawn side by side in the atlas — follow one
+    coordinate across the swap:
+    <a href="atlas.html#hidden">residual coordinate swap</a>.</p>
+  </section>
+
+  <section class="card" aria-label="the artifact">
+    <h2>The artifact</h2>
+    <div class="row" style="align-items: flex-start; gap: 28px;">
+      <table class="kv" id="cfgtable" aria-label="checkpoint configuration"></table>
+      <div style="max-width: 56ch;">
+        <p>The checkpoint is a single MGW v1 container holding eleven
+        tensors: nine weight matrices, the tokenizer's character table
+        (<span class="mono">a…z</span>, plus a beginning-of-sequence token),
+        and the training run's final RNG state. Weights are int64 values on
+        the Q16.48 scale: the stored integer is the value times 2<sup>48</sup>.
+        Nothing in this project ever rounds those integers — pages parse the
+        checkpoint themselves and keep every scalar as a BigInt.</p>
+        <p class="sub sha">sha-256 <span class="mono" id="sha"></span></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" aria-label="the twenty names">
+    <h2>The model's complete public output</h2>
+    <p>Sampling with the checkpoint's stored RNG state at temperature 0.5
+    yields exactly these 20 names. The repo's C harness generated them with
+    the original runtime, re-derived every intermediate value with an
+    instrumented replica, and compared bit-for-bit:
+    <span class="mono" id="tracefacts"></span>.</p>
+    <div class="names" id="names"></div>
+  </section>
+
+  <section class="card" aria-label="exactness contract">
+    <h2>How exactness works here</h2>
+    <ul class="tight">
+      <li><b>Stored values never touch floating point.</b> Pages decode the
+      embedded checkpoint into BigInt64Arrays; tooltips and inspectors render
+      raw integers, two's-complement hex, and exact terminating decimals.</li>
+      <li><b>Display geometry is labeled.</b> Pixel positions, colors, and
+      projections use float64 — a conversion that is itself exact for every
+      weight in this file (all |raw| &lt; 2<sup>53</sup>; the build asserts it) —
+      and every such use is marked as display-only.</li>
+      <li><b>The C runtime is the oracle.</b> The trace harness compiles the
+      unmodified original <span class="mono">microgpt_int.c</span> and
+      compares its outputs against the instrumented replay: 122 steps, zero
+      mismatches, identical final RNG state.</li>
+      <li><b>Pages verify themselves.</b> On load, each page re-runs its
+      exactness checks (checksum equality with the C loader, BigInt
+      recomputation) and shows the result in the header badge. The same
+      checks run DOM-less in CI via <span class="mono">tools/page_check.js</span>.</li>
+      <li><b>Everything regenerates deterministically.</b>
+      <span class="mono">make test</span> rebuilds every artifact twice and
+      compares bytes.</li>
+    </ul>
+  </section>
+
+  <section class="card" aria-label="sibling repositories">
+    <h2>Sibling experiments on the same checkpoint</h2>
+    <p>This repo is one of a family built around the same integer-exact
+    model. The copy of <span class="mono">model.mgw</span> vendored here is
+    byte-identical (same sha-256) to the copies in the sibling repos —
+    verified during construction and recorded in
+    <span class="mono">SOURCE_PROVENANCE.md</span>. Results below are the
+    siblings' own documented findings, cited — not re-verified here.</p>
+    <div class="sib"><b>int-llm</b> — the source: a GPT trained and run
+    entirely in Q16.48 int64 arithmetic (<a href="https://github.com/nmicic/int-llm">github.com/nmicic/int-llm</a>,
+    pinned at commit <span class="mono">1b80e024</span>). Its validation
+    records report bit-identical inference across 14 hardware targets — down
+    to an 8-bit AVR — with golden output hash
+    <span class="mono">c0d933ea340452ec</span>. Its runtime is vendored here
+    unmodified as the oracle.</div>
+    <div class="sib"><b>int-llm-precision-ladder</b> — descends the fraction-bit
+    ladder from Q16.48: its records report the large-model evaluation's exact
+    top-1 answers surviving down to F12, first changing at F11. The atlas
+    page's round-to-F preview echoes the idea on stored weights only.</div>
+    <div class="sib"><b>int-llm-coordinate-permutation</b> — permutes internal
+    coordinates coherently across all tensors: its records report 80/80
+    outputs identical after permutation. The checkpoint read here is that
+    repo's committed copy.</div>
+  </section>
+
+  <footer>
+    <div>model <span class="mono" id="sha2"></span> ·
+    <span id="tracefacts2"></span> · offline, self-contained, no network
+    use · Apache-2.0 · Copyright 2026 Nenad Mićić</div>
+  </footer>
+</main>
+
+<div class="help-overlay" id="help" role="dialog" aria-modal="true" aria-label="help">
+  <div class="help-box" id="helpBox" tabindex="-1">
+    <h2>Help</h2>
+    <p>This is the landing page of a four-view exploration of a tiny
+    integer-only GPT checkpoint. Each view is a single self-contained HTML
+    file that parses the checkpoint in your browser.</p>
+    <h3>Keyboard</h3>
+    <p><kbd>1</kbd> weight atlas · <kbd>2</kbd> inference trace ·
+    <kbd>3</kbd> embedding space · <kbd>4</kbd> weight explorer ·
+    <kbd>?</kbd> toggle this help · <kbd>Esc</kbd> close</p>
+    <h3>Reading the numbers</h3>
+    <p>Q16.48 means a stored int64 <span class="mono">raw</span> represents
+    the value <span class="mono">raw / 2<sup>48</sup></span>. Such values have
+    exact terminating decimals (at most 48 fraction digits), which is what
+    the pages' inspectors print.</p>
+    <p><button id="helpclose">close</button></p>
+  </div>
+</div>
+
+<script>
+"use strict";
+const SUMMARY = __SUMMARY_JSON__;
+const LAYOUTS = __LAYOUTS_JSON__;
+const HIDDEN = __HIDDEN_JSON__;
+
+/* ---- pure checks (run in node by tools/page_check.js, and in-browser) ---- */
+function runChecks() {
+  let n = 0;
+  const ok = (cond, msg) => {
+    n++;
+    if (!cond) throw new Error("index self-check failed: " + msg);
+  };
+  ok(SUMMARY.format === "int-llm-viz-summary-v1", "summary format");
+  ok(SUMMARY.trace_pass === true, "trace verification pass");
+  ok(SUMMARY.trace_steps === 122, "122 verified steps");
+  ok(Array.isArray(SUMMARY.samples) && SUMMARY.samples.length === 20,
+     "20 samples");
+  ok(SUMMARY.samples[0] === "kayla" && SUMMARY.samples[19] === "karin",
+     "sample list endpoints");
+  ok(SUMMARY.num_params === 14272, "14272 params");
+  ok(SUMMARY.model_bytes === 115576, "checkpoint byte size");
+  ok(/^[0-9a-f]{64}$/.test(SUMMARY.model_sha256), "sha-256 shape");
+  ok(SUMMARY.uchars === "abcdefghijklmnopqrstuvwxyz", "uchars a..z");
+  const c = SUMMARY.config;
+  ok(c.n_embd === 32 && c.n_head === 4 && c.head_dim === 8 &&
+     c.n_layer === 1 && c.mlp_dim === 128 && c.block_size === 8 &&
+     c.vocab_size === 27 && c.bos === 26, "config shape");
+  const fnv = SUMMARY.tensor_fnv1a64;
+  const names = Object.keys(fnv);
+  ok(names.length === 9, "9 tensor checksums");
+  for (const k of names) ok(/^[0-9]+$/.test(fnv[k]) && fnv[k] !== "0",
+                            "fnv " + k + " nonzero decimal");
+  ok(LAYOUTS.format === "int-llm-viz-layouts-v1", "layouts format");
+  ok(LAYOUTS.provenance.source_sha256 === SUMMARY.model_sha256,
+     "layout set derives from this exact checkpoint");
+  ok(LAYOUTS.variants.map((v) => v.name).join("|") ===
+     "original|smooth|spread|random", "four layout variants");
+  for (const v of LAYOUTS.variants) {
+    const seen = new Uint8Array(128);
+    let bij = v.new_to_old.length === 128;
+    if (bij) for (const o of v.new_to_old) {
+      if (!Number.isInteger(o) || o < 0 || o > 127 || seen[o]) { bij = false; break; }
+      seen[o] = 1;
+    }
+    ok(bij, v.name + " new_to_old is a bijection on 0…127");
+    ok(/^[01]\.[0-9]{12}$/.test(v.selected_over_original),
+       v.name + " score ratio is the 12-decimal rendering");
+  }
+  ok(LAYOUTS.variants[0].model_sha256 === SUMMARY.model_sha256 &&
+     LAYOUTS.variants[0].moved_neurons === 0,
+     "original variant is the identity on this checkpoint");
+  ok(HIDDEN.format === "int-llm-viz-hidden-v1", "hidden-swap format");
+  ok(HIDDEN.provenance.source_sha256 === SUMMARY.model_sha256,
+     "hidden swap derives from this exact checkpoint");
+  { const n2o = HIDDEN.swap.new_to_old;
+    const seen = new Uint8Array(32);
+    let bij = n2o.length === 32;
+    if (bij) for (const o of n2o) {
+      if (!Number.isInteger(o) || o < 0 || o > 31 || seen[o]) { bij = false; break; }
+      seen[o] = 1;
+    }
+    ok(bij, "hidden new_to_old is a bijection on 0…31");
+    let tr = true;
+    for (let j = 0; j < 32; j++) {
+      const want = j === HIDDEN.swap.left ? HIDDEN.swap.right
+        : j === HIDDEN.swap.right ? HIDDEN.swap.left : j;
+      if (n2o[j] !== want) { tr = false; break; }
+    }
+    ok(tr, "hidden order is exactly the " + HIDDEN.swap.left + "<->" +
+       HIDDEN.swap.right + " transposition"); }
+  ok(HIDDEN.tensors.length === 9 &&
+     HIDDEN.tensors.reduce((s, t) => s + t.changed_positions, 0) ===
+       HIDDEN.totals.changed_positions &&
+     HIDDEN.tensors.reduce((s, t) => s + t.elements, 0) ===
+       HIDDEN.totals.learned_positions,
+     "nine swapped tensors; per-tensor counts sum to the totals");
+  ok(HIDDEN.totals.changed_positions === 892 &&
+     HIDDEN.totals.learned_positions === 14272,
+     "totals are the published 892/14272 (as printed on this page)");
+  ok(/^[0-9a-f]{64}$/.test(HIDDEN.variant_sha256) &&
+     HIDDEN.variant_sha256 !== SUMMARY.model_sha256,
+     "swapped checkpoint is a distinct well-formed sha256");
+  return n;
+}
+
+const IS_BROWSER = typeof document !== "undefined";
+if (!IS_BROWSER) {
+  const checks = runChecks();
+  globalThis.__PAGE_CHECK__ = { page: "index", pass: true, checks };
+} else {
+  init();
+}
+
+function init() {
+  /* self-check badge */
+  const badge = document.getElementById("selfcheck");
+  try {
+    const n = runChecks();
+    badge.className = "badge pass";
+    badge.textContent = "self-check: " + n + " checks ✓";
+  } catch (e) {
+    badge.className = "badge fail";
+    badge.textContent = "self-check: FAILED";
+    console.error(e);
+  }
+
+  /* artifact table */
+  const c = SUMMARY.config;
+  const rows = [
+    ["file", SUMMARY.model_file + " · " + SUMMARY.model_bytes.toLocaleString("en-US") + " bytes"],
+    ["weights", SUMMARY.num_params.toLocaleString("en-US") + " int64 (Q16.48)"],
+    ["residual dim", String(c.n_embd)],
+    ["attention", c.n_head + " heads × head dim " + c.head_dim],
+    ["layers", String(c.n_layer)],
+    ["mlp hidden", String(c.mlp_dim)],
+    ["context", String(c.block_size) + " positions"],
+    ["vocabulary", c.vocab_size + " (a…z + BOS)"],
+  ];
+  document.getElementById("cfgtable").innerHTML = rows
+    .map(r => "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>").join("");
+  document.getElementById("sha").textContent = SUMMARY.model_sha256;
+  document.getElementById("sha2").textContent =
+    SUMMARY.model_sha256.slice(0, 16) + "…";
+  const tf = SUMMARY.trace_steps + " steps, 0 mismatches";
+  document.getElementById("tracefacts").textContent = tf;
+  document.getElementById("tracefacts2").textContent =
+    "traced against the original C runtime: " + tf;
+
+  /* names */
+  document.getElementById("names").innerHTML = SUMMARY.samples
+    .map(s => '<span class="chip">' + s + "</span>").join("");
+
+  /* layout-set table (exact strings straight from data/layouts.json) */
+  document.getElementById("lotable").innerHTML = LAYOUTS.variants
+    .map(v => "<tr><td>" + v.name + "</td><td>" +
+      v.moved_neurons + "/128 neurons moved</td><td>score = " +
+      v.selected_over_original + " × original</td>" +
+      '<td class="sha"><span class="mono" title="' + v.model_sha256 + '">' +
+      v.model_sha256.slice(0, 16) + "…</span></td></tr>").join("");
+  document.getElementById("lonote").innerHTML =
+    LAYOUTS.claim_boundary[0] + " Scores are exact integer sums of |Δraw| " +
+    "between adjacent neuron profiles; the ratio is the generator's 12-decimal " +
+    "rendering, re-verified here.";
+
+  /* help overlay + keyboard (focus moves into the dialog and back) */
+  const help = document.getElementById("help");
+  let helpReturnFocus = null;
+  const toggleHelp = (force) => {
+    const open = force !== undefined ? force : !help.classList.contains("open");
+    if (open === help.classList.contains("open")) return;
+    help.classList.toggle("open", open);
+    if (open) {
+      helpReturnFocus = document.activeElement;
+      document.getElementById("helpBox").focus();
+    } else if (helpReturnFocus && helpReturnFocus.focus) {
+      helpReturnFocus.focus();
+      helpReturnFocus = null;
+    }
+  };
+  document.getElementById("helpbtn").addEventListener("click", () => toggleHelp());
+  document.getElementById("helpclose").addEventListener("click", () => toggleHelp(false));
+  help.addEventListener("click", (e) => { if (e.target === help) toggleHelp(false); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "?") { toggleHelp(); e.preventDefault(); }
+    else if (e.key === "Escape") toggleHelp(false);
+    else if (e.key === "1") location.href = "atlas.html";
+    else if (e.key === "2") location.href = "trace.html";
+    else if (e.key === "3") location.href = "space.html";
+    else if (e.key === "4") location.href = "weights.html";
+  });
+}
+</script>
+</body>
+</html>

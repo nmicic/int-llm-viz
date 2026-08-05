@@ -1,0 +1,153 @@
+{
+ "claim_boundary": [
+  "One global residual-basis transposition, not two isolated weight edits: the same two coordinate lanes move together through all nine learned matrices, and the model function is preserved exactly.",
+  "The heatmaps show physical checkpoint layout; no acceleration or performance claim is made."
+ ],
+ "format": "int-llm-viz-hidden-v1",
+ "nonlearned_same": [
+  "tokenizer.uchars",
+  "rng.state"
+ ],
+ "oracle_replay": "this repo's C trace harness replayed the reconstructed variant: 20 samples, 122 steps \u2014 text, logits, probs, RNG draws, q/k/v, attention and h_pre byte-identical; the six residual-basis vectors per step exactly reindexed by new_to_old",
+ "provenance": {
+  "generator": "experiments/hidden_channel_permutation/make_hidden_swap.py --left 0 --right 31 (sibling int-llm-coordinate-permutation repo)",
+  "source_sha256": "466cfe9dba7b888cdaa23dedf4b10351826795793448c8e95dcb0f7a61ed33eb",
+  "verified_by": "tools/derive_hidden.py"
+ },
+ "swap": {
+  "left": 0,
+  "new_to_old": [
+   31,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   19,
+   20,
+   21,
+   22,
+   23,
+   24,
+   25,
+   26,
+   27,
+   28,
+   29,
+   30,
+   0
+  ],
+  "right": 31
+ },
+ "tensors": [
+  {
+   "axis": "column",
+   "changed_positions": 54,
+   "cols": 32,
+   "elements": 864,
+   "fnv1a64_original": "17112195073940409773",
+   "fnv1a64_variant": "13192741829276349721",
+   "name": "wte",
+   "rows": 27
+  },
+  {
+   "axis": "column",
+   "changed_positions": 16,
+   "cols": 32,
+   "elements": 256,
+   "fnv1a64_original": "7287646460332340080",
+   "fnv1a64_variant": "12402132019475079640",
+   "name": "wpe",
+   "rows": 8
+  },
+  {
+   "axis": "column",
+   "changed_positions": 54,
+   "cols": 32,
+   "elements": 864,
+   "fnv1a64_original": "12452710169188095494",
+   "fnv1a64_variant": "16162301827720442918",
+   "name": "lm_head",
+   "rows": 27
+  },
+  {
+   "axis": "column",
+   "changed_positions": 64,
+   "cols": 32,
+   "elements": 1024,
+   "fnv1a64_original": "14289521512516449134",
+   "fnv1a64_variant": "4322730820277493746",
+   "name": "layers.0.attn_wq",
+   "rows": 32
+  },
+  {
+   "axis": "column",
+   "changed_positions": 64,
+   "cols": 32,
+   "elements": 1024,
+   "fnv1a64_original": "18318165341557039368",
+   "fnv1a64_variant": "7144492174998132408",
+   "name": "layers.0.attn_wk",
+   "rows": 32
+  },
+  {
+   "axis": "column",
+   "changed_positions": 64,
+   "cols": 32,
+   "elements": 1024,
+   "fnv1a64_original": "10521255024185256766",
+   "fnv1a64_variant": "18185038480636028986",
+   "name": "layers.0.attn_wv",
+   "rows": 32
+  },
+  {
+   "axis": "column",
+   "changed_positions": 256,
+   "cols": 32,
+   "elements": 4096,
+   "fnv1a64_original": "6045480482417788145",
+   "fnv1a64_variant": "10111387910173690377",
+   "name": "layers.0.mlp_fc1",
+   "rows": 128
+  },
+  {
+   "axis": "row",
+   "changed_positions": 64,
+   "cols": 32,
+   "elements": 1024,
+   "fnv1a64_original": "15490302647993854528",
+   "fnv1a64_variant": "3436637059742037168",
+   "name": "layers.0.attn_wo",
+   "rows": 32
+  },
+  {
+   "axis": "row",
+   "changed_positions": 256,
+   "cols": 128,
+   "elements": 4096,
+   "fnv1a64_original": "1387326212090510510",
+   "fnv1a64_variant": "3144218047310460486",
+   "name": "layers.0.mlp_fc2",
+   "rows": 32
+  }
+ ],
+ "totals": {
+  "changed_positions": 892,
+  "learned_positions": 14272,
+  "matrices_changed": 9
+ },
+ "variant_sha256": "8e755c30c6b0d87fa5b36af0be282a4bd6e862211587361c502d81659379228b"
+}

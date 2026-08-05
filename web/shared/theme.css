@@ -1,0 +1,194 @@
+/*
+ * Copyright 2026 Nenad Mićić
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * theme.css — shared design tokens and base components for the
+ * int-llm-viz pages. Dark instrument-panel dialect adopted from
+ * the author's four-square-balance / three-square-balance viewers.
+ *
+ * Color grammar (validated against surface #0b0e14 for CVD separation
+ * and WCAG contrast; see README "Design notes"):
+ *   diverging (signed weights):  --neg #4dabf7  <- neutral gray -> --pos #ffa94d
+ *   sequential (0..1 magnitude): surface -> --gold #ffd166 (amber ramp)
+ *   categorical heads (fixed order): --h0..--h3
+ *   categorical vector families (fixed order): --fam-wte/--fam-lmh/--fam-wpe
+ *   status (badges only): --good / --bad
+ */
+:root {
+  --bg: #0b0e14;
+  --panel: #11151f;
+  --panel2: #161b28;
+  --line: #262c3a;
+  --ink: #cdd6f4;
+  --dim: #7f849c;
+  --accent: #3b5bdb;
+  --good: #40c057;
+  --bad: #fa5252;
+  --gold: #ffd166;
+  --neg: #4dabf7;
+  --pos: #ffa94d;
+  --h0: #fa5252;
+  --h1: #fab005;
+  --h2: #38d9a9;
+  --h3: #4dabf7;
+  --fam-wte: #74c0fc;
+  --fam-lmh: #f783ac;
+  --fam-wpe: #ffd43b;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --serif: Georgia, "Times New Roman", serif;
+}
+
+* { box-sizing: border-box; }
+
+/* -------- narrow-width safety --------
+ * The pages are full of long unbreakable tokens (48-digit exact
+ * decimals, sha-256 hashes, two's-complement hex). overflow-wrap:
+ * anywhere lets those break as a last resort instead of forcing
+ * body-level horizontal scroll at narrow widths; spaces remain the
+ * preferred break points, so prose is unaffected. min-width: 0 lets
+ * flex/grid children shrink to fit instead of widening the page. */
+* { min-width: 0; }
+body { overflow-wrap: anywhere; }
+pre { overflow-x: auto; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+main { max-width: 1320px; margin: 0 auto; padding: 16px; }
+
+h1 {
+  font: italic 400 26px/1.25 var(--serif);
+  margin: 8px 0 2px;
+}
+h1 .plain { font-style: normal; }
+h2 { font-size: 17px; margin: 18px 0 6px; }
+h3 { font-size: 14px; margin: 12px 0 4px; color: var(--dim); }
+
+p { max-width: 72ch; }
+a { color: var(--neg); }
+a:hover { color: var(--gold); }
+
+.sub { color: var(--dim); font-size: 13px; margin: 2px 0 10px; }
+
+.eq, code, kbd, .mono { font-family: var(--mono); font-size: 0.92em; }
+
+kbd {
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--panel2);
+  padding: 0 5px;
+  font-size: 11px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 10px 0;
+}
+
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* -------- controls -------- */
+button, select, input[type="text"], input[type="number"] {
+  font: 13px var(--mono);
+  color: var(--ink);
+  background: #1e2330;
+  border: 1px solid #313646;
+  border-radius: 8px;
+  padding: 5px 10px;
+}
+button { cursor: pointer; }
+button:hover { border-color: var(--dim); }
+button.on, button.primary, button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+input[type="range"] { accent-color: var(--accent); }
+
+/* keyboard accessibility: an unmistakable focus ring */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* -------- badges -------- */
+.badge {
+  display: inline-block;
+  font: 11px var(--mono);
+  border-radius: 999px;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+}
+.badge.pass { color: #8ce99a; background: #143222; border-color: #2b6b43; }
+.badge.fail { color: #ffa8a8; background: #3a1420; border-color: #7a2b3b; }
+.badge.info { color: #d0bcff; background: #2b2150; border-color: #4c3f82; }
+
+/* -------- legend -------- */
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--dim); }
+.legend .sw {
+  display: inline-block; width: 10px; height: 10px;
+  border-radius: 3px; margin-right: 5px; vertical-align: -1px;
+}
+
+/* -------- tooltip -------- */
+.tip {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+  background: rgba(9, 13, 21, 0.95);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font: 11px/1.5 var(--mono);
+  color: var(--ink);
+  max-width: 420px;
+  display: none;
+  overflow-wrap: break-word;
+}
+.tip .k { color: var(--dim); }
+
+/* -------- help overlay -------- */
+.help-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(5, 7, 11, 0.8);
+  display: none;
+  align-items: flex-start; justify-content: center;
+  padding: 40px 16px;
+}
+.help-overlay.open { display: flex; }
+.help-box {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  max-width: 640px; max-height: 85vh; overflow: auto;
+  padding: 18px 22px;
+}
+.help-box h2 { margin-top: 4px; }
+
+/* top navigation strip shared by all pages */
+.topnav {
+  display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+  font-size: 13px; padding: 8px 0 0;
+}
+.topnav .here { color: var(--gold); }
+
+footer {
+  color: var(--dim); font-size: 12px;
+  margin: 26px 0 14px; border-top: 1px solid var(--line); padding-top: 10px;
+}
+
+@media (max-width: 900px) {
+  main { padding: 10px; }
+  h1 { font-size: 21px; }
+}

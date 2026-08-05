@@ -1,0 +1,10 @@
+{
+  "files": {
+    "comparison-data.js": "7cea3425782ce87572472ee9f38f8e0390e349ffc78d6bf890b9b638a2c7af21",
+    "hidden-order.json": "006a380e57b950166e0f35a99286dd27bca7b4ef55c9af03dcde9183a4518a2c",
+    "index.html": "c7a29a7e6a02a9de583abd69dd536dfec4ca54bba1cdf90d2dddcb210d820e9d"
+  },
+  "format": "int-llm-hidden-swap-detail-manifest-v1",
+  "original_sha256": "466cfe9dba7b888cdaa23dedf4b10351826795793448c8e95dcb0f7a61ed33eb",
+  "variant_sha256": "8e755c30c6b0d87fa5b36af0be282a4bd6e862211587361c502d81659379228b"
+}
