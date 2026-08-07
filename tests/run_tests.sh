@@ -22,9 +22,10 @@
 #   7. tools/page_check.js (execute every page's scripts + self-test, no DOM).
 #   8. tests/parser_crosscheck.js (JS parser === C loader, FNV-1a 64).
 #   9. tests/q48_format_crosscheck.py (exact decimal formatting).
-#  10. tests/browser_check.js (live weights page in headless Chrome:
-#      URL-state restore, renderAt determinism across reloads, linked
-#      4-D cameras, pause semantics under trusted input, reduced motion.
+#  10. tests/browser_check.js (live weights/space/trace pages in headless
+#      Chrome: URL-state restore, renderAt determinism across reloads,
+#      linked 4-D cameras, pause semantics under trusted input, the trace
+#      page's default step autoplay, reduced motion on all three.
 #      Skips cleanly when no Chrome/Chromium or Node < 22 is available;
 #      set REQUIRE_BROWSER=1 to make that a failure).
 
@@ -85,7 +86,7 @@ node tests/parser_crosscheck.js
 step "9. q48_format_crosscheck.py (exact decimal rendering)"
 python3 tests/q48_format_crosscheck.py
 
-step "10. browser_check.js (live weights page; skips without a browser)"
+step "10. browser_check.js (live weights/space/trace pages; skips without a browser)"
 node tests/browser_check.js
 
 printf '\nALL TESTS PASSED\n'

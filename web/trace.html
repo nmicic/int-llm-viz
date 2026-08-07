@@ -203,7 +203,8 @@ instead &mdash; it is committed; <b>make</b> regenerates it.
     <table class="helpkeys">
       <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>previous / next sample</td></tr>
       <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>previous / next step (when no grid is focused)</td></tr>
-      <tr><td><kbd>Space</kbd></td><td>autoplay (1 step/s; runs on into the next sample, wrapping at the end)</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>pause / resume autoplay (1 step/s; on by default unless the system prefers
+      reduced motion; runs on into the next sample, wrapping at the end; picking a step or sample by hand pauses)</td></tr>
       <tr><td><kbd>R</kbd></td><td>toggle MLP pre-ReLU / post-ReLU</td></tr>
       <tr><td><kbd>Tab</kbd></td><td>move focus between controls and grids</td></tr>
       <tr><td>arrows in a grid</td><td>move that grid's cell cursor (residual and MLP: 2-D; attention: ← →; output: ↑ ↓; roulette: ← →)</td></tr>
@@ -639,6 +640,7 @@ function ulpGapText(total) {
 
 /* ================= browser UI ========================================= */
 const IS_BROWSER = typeof document !== "undefined";
+let UI = null;   /* set by init(); holds {si, pi, playing, cursor} state */
 
 function init() {
   /* ---- exact data caches ---- */
@@ -731,8 +733,11 @@ function init() {
     (V.logit_mismatches + V.kv_mismatches + V.sample_mismatches) + " mismatches";
 
   /* ---- UI state ---- */
-  const UI = {
-    si: 0, pi: 0, playing: false, playLast: null, mlpPost: false, dirty: true,
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  UI = {
+    si: 0, pi: 0, reducedMotion,
+    playing: !reducedMotion,  /* autoplay by default; any manual step navigation pauses */
+    playLast: null, mlpPost: false, dirty: true,
     resCur: { r: 0, c: 0 }, resHover: null,
     attnCur: { h: 0, s: 0 }, attnHover: null,
     mlpCur: 0, mlpHover: null,
@@ -827,7 +832,8 @@ function init() {
       return b;
     };
     mk("◀", "btnPrev", () => selectStep(UI.pi - 1), "previous step");
-    mk(UI.playing ? "■ stop" : "▶ play", "btnPlay", togglePlay, "autoplay steps");
+    mk(UI.playing ? "■ stop" : "▶ play", "btnPlay", togglePlay, "autoplay steps")
+      .setAttribute("aria-pressed", UI.playing ? "true" : "false");
     mk("▶", "btnNext", () => selectStep(UI.pi + 1), "next step");
     TRACE.samples[UI.si].steps.forEach((st, pi) => {
       const b = document.createElement("button");
@@ -850,7 +856,10 @@ function init() {
       b.setAttribute("aria-selected", i === UI.si ? "true" : "false");
     });
     const play = el("btnPlay");
-    if (play) play.textContent = UI.playing ? "■ stop" : "▶ play";
+    if (play) {
+      play.textContent = UI.playing ? "■ stop" : "▶ play";
+      play.setAttribute("aria-pressed", UI.playing ? "true" : "false");
+    }
   }
   function selectSample(i) {
     UI.si = Math.max(0, Math.min(TRACE.samples.length - 1, i));
@@ -862,6 +871,8 @@ function init() {
     UI.dirty = true;
   }
   function selectStep(pi) {
+    /* a hand on the timeline pauses autoplay — the chosen step must hold still */
+    if (UI.playing) { UI.playing = false; UI.playLast = null; refreshTimelineSel(); }
     const clamped = Math.max(0, Math.min(stepCount() - 1, pi));
     if (clamped === UI.pi) return;
     UI.pi = clamped;

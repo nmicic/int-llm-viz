@@ -41,7 +41,7 @@ a notice pointing here instead of a working page.)
 | Page | What it shows |
 | --- | --- |
 | `site/atlas.html` | All nine weight tensors as heatmaps in **literal matrix coordinates** — every parameter at its exact row/column, head boundaries marked, per-tensor histograms, bit occupancy, exact round-to-F-bits preview. Two labeled **derived** sections at the bottom: the four verified MLP neuron orders side by side (deep links: `atlas.html#order=smooth` / `spread` / `random`), and the verified residual-coordinate swap 0 ↔ 31 traced through all nine matrices (deep link: `atlas.html#hidden=fc2`). |
-| `site/trace.html` | The model's complete recorded output (20 sampled names) replayed **step by step** — residual stream, per-head attention, ReLU firing, logits → probabilities → the exact roulette draw. The browser re-derives each step in exact BigInt arithmetic and verifies it against the recorded C-oracle values. |
+| `site/trace.html` | The model's complete recorded output (20 sampled names) replayed **step by step** — residual stream, per-head attention, ReLU firing, logits → probabilities → the exact roulette draw. Auto-plays through the recording one step per second (reduced-motion-respecting; picking a step or sample by hand pauses it). The browser re-derives each step in exact BigInt arithmetic and verifies it against the recorded C-oracle values. |
 | `site/space.html` | The 62 vectors sharing the 32-dim residual space (27 wte + 27 lm_head + 8 wpe) in a hand-rolled 3-D view — **literal coordinate axes** vs a clearly-labeled **derived PCA** mode, plus a four-panel PC1–4 treatment. Every camera auto-rotates gently on one shared clock (reduced-motion-respecting; grabbing a camera pauses it, content switches do not). |
 | `site/weights.html` | Any weight matrix as a **3-D point cloud**, a heatmap with exact readouts, and the checkpoint's literal **byte layout**; an exact **contribution mode** (each stored weight × the recorded input it met at a chosen trace step, `fp_mul`-exact, every row re-summed in BigInt against the C-oracle output), and a **4-D shadows** view — four projections of (column, row, weight, contribution) under one shared camera. Deep links carry the whole scene (`weights.html?tensor=mlp_fc1&view=4d&sample=0&step=3&yaw=0.7&pitch=-0.2`), gentle auto-rotation respects reduced motion, a captioned tour advances only by hand, and `window.VIZ.renderAt(ms)` draws reproducible frames for scripted capture. |
 
@@ -123,11 +123,12 @@ includes the trace page's full 122-step BigInt recompute); the JS-parser ↔
 C-loader checksum equality (`tests/parser_crosscheck.js`); exact
 decimal formatting against Python `Fraction` ground truth
 (`tests/q48_format_crosscheck.py`); and, when a Chrome/Chromium binary
-is available, the weights and space pages' live-browser contract
+is available, the weights, space and trace pages' live-browser contract
 (`tests/browser_check.js` — URL-state restoration, `renderAt`
 determinism across reloads, linked 4-D cameras, pause semantics under
-trusted input events, and `prefers-reduced-motion` on both animated
-pages; the step skips cleanly on machines without a browser).
+trusted input events, the trace page's default step autoplay, and
+`prefers-reduced-motion` on all three animated pages; the step skips
+cleanly on machines without a browser).
 
 `make release-check` is the gate before publishing: the same suite with
 the browser step made mandatory (`REQUIRE_BROWSER=1` — a missing Chrome

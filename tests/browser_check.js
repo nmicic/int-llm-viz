@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // browser_check.js — live-browser verification of the animated pages
-// (site/weights.html, site/space.html).
+// (site/weights.html, site/space.html, site/trace.html).
 //
 // The Node self-checks (tools/page_check.js) prove the pure layer without a
 // DOM; this test proves the browser-only contracts that need a real renderer
@@ -35,6 +35,11 @@
 //      offset folded, mode/family switches and the matrix's cell keys
 //      keep playing, all four tetrad panels turn (linked and unlinked)
 //      on the one shared clock, and reduced motion gates autoplay only.
+//   9. The trace page autoplays its recording by default (1 step/s on
+//      the rAF clock), any manual step or sample navigation pauses it
+//      (the chosen step holds still), the space bar resumes, and
+//      reduced motion suppresses the autoplay while manual play still
+//      works.
 //
 // Requires a Chrome/Chromium binary and Node >= 22 (built-in WebSocket).
 // Without either the test SKIPS with exit 0 so the core suite stays
@@ -51,6 +56,8 @@ const PAGE_BASE = "file://" +
   path.resolve(__dirname, "..", "site", "weights.html");
 const SPACE_PAGE = "file://" +
   path.resolve(__dirname, "..", "site", "space.html");
+const TRACE_PAGE = "file://" +
+  path.resolve(__dirname, "..", "site", "trace.html");
 const EXAMPLE =
   "?tensor=mlp_fc1&view=4d&sample=0&step=3&yaw=0.7&pitch=-0.2&rot=0";
 
@@ -127,7 +134,8 @@ function report(name, pass, extra) {
   if (!chromeBin)
     skip("no Chrome/Chromium binary found (set CHROME=/path/to/chrome)");
   if (!fs.existsSync(PAGE_BASE.replace("file://", "")) ||
-      !fs.existsSync(SPACE_PAGE.replace("file://", "")))
+      !fs.existsSync(SPACE_PAGE.replace("file://", "")) ||
+      !fs.existsSync(TRACE_PAGE.replace("file://", "")))
     skip("site pages not built (run tools/build_site.py first)");
 
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "viz-browser-check-"));
@@ -283,6 +291,21 @@ function report(name, pass, extra) {
         "if (!UI.rot.playing) document.getElementById('rotBtn').click(); true");
       await sleep(150);
       return evl("UI.rot.playing === true");
+    };
+
+    // -- trace-page helper (same shape: UI is the boot marker) --
+    const navTrace = async () => {
+      await c.send("Page.navigate", { url: TRACE_PAGE });
+      let ready = false;
+      for (let i = 0; i < 100 && !ready; i++) {
+        await sleep(150);
+        ready = await evl(
+          "document.readyState === 'complete' && typeof UI === 'object' && " +
+          "UI !== null && typeof UI.pi === 'number' && " +
+          "!!document.getElementById('btnPlay')").catch(() => false);
+      }
+      if (!ready) throw new Error("trace page did not become ready");
+      await sleep(300);
     };
 
     /* ---- 1. clean boot ---- */
@@ -524,6 +547,57 @@ function report(name, pass, extra) {
     await evl("document.getElementById('rotBtn').click(); true");
     report("manual play still works (explicit user action)",
       await evl("UI.rot.playing === true"));
+    await c.send("Emulation.setEmulatedMedia", { media: "", features: [] });
+
+    /* ---- 9. the trace page: default autoplay, hands pause it ---- */
+    console.log("trace page: boot and default autoplay");
+    await navTrace();
+    report("oracle badge is green",
+      await evl("document.getElementById('oracleBadge').className" +
+        ".includes('pass')"),
+      await evl("document.getElementById('oracleBadge').textContent"));
+    report("autoplay is on by default (button shows the playing state)",
+      await evl("UI.playing === true && UI.reducedMotion === false && " +
+        "document.getElementById('btnPlay')" +
+        ".getAttribute('aria-pressed') === 'true'"));
+    const tr0 = await evl("({ si: UI.si, pi: UI.pi })");
+    await sleep(1250);   /* the clock ticks every 1000 ms — one tick fits */
+    const tr1 = await evl("({ si: UI.si, pi: UI.pi })");
+    report("the 1 step/s clock advances the timeline",
+      tr1.si !== tr0.si || tr1.pi !== tr0.pi,
+      JSON.stringify(tr0) + " -> " + JSON.stringify(tr1));
+
+    console.log("trace page: manual navigation pauses");
+    await evl("document.getElementById('btnNext').click(); true");
+    const tp = await evl("({ playing: UI.playing, pi: UI.pi })");
+    report("the next-step button pauses autoplay",
+      tp.playing === false && await evl("document.getElementById('btnPlay')" +
+        ".getAttribute('aria-pressed') === 'false'"), JSON.stringify(tp));
+    const held = await evl("UI.pi");
+    await sleep(1250);
+    report("the chosen step holds still while paused",
+      await evl("UI.pi") === held);
+
+    await evl("document.activeElement && document.activeElement.blur(); true");
+    await dispatchKey(" ", "Space", 32);
+    report("the space bar resumes autoplay", await evl("UI.playing === true"));
+    await dispatchKey("ArrowRight", "ArrowRight", 39);
+    report("a step arrow key pauses again", await evl("UI.playing === false"));
+    await dispatchKey(" ", "Space", 32);
+    report("resumed once more", await evl("UI.playing === true"));
+    await evl("(() => { const b = document.querySelectorAll('#sampleStrip button');" +
+      " b[(UI.si + 1) % b.length].click(); return true; })()");
+    report("picking a sample by hand pauses too",
+      await evl("UI.playing === false"));
+
+    await c.send("Emulation.setEmulatedMedia",
+      { media: "", features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+    await navTrace();
+    report("trace: no autoplay under prefers-reduced-motion",
+      await evl("UI.reducedMotion === true && UI.playing === false"));
+    await evl("document.getElementById('btnPlay').click(); true");
+    report("trace: manual play still works (explicit user action)",
+      await evl("UI.playing === true"));
     await c.send("Emulation.setEmulatedMedia", { media: "", features: [] });
 
     /* ---- final ---- */
